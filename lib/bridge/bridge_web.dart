@@ -10,6 +10,7 @@ import 'package:web/web.dart' as web;
 import 'package:logging/logging.dart';
 
 import 'package:godash/pb/core.pb.dart';
+import 'package:godash/bridge/backpressure.dart';
 
 /// Configuration for the web [Bridge].
 /// Must be set via [Bridge.configure] before the first [Bridge] access.
@@ -90,6 +91,14 @@ class Bridge extends ChangeNotifier {
 
   /// Copies [bytes] into a fresh JS-owned ArrayBuffer so it can be transferred
   /// (zero-copy ownership transfer) to the Worker via postMessage.
+  ///
+  /// P4 evaluation (PLAN.md): this defensive copy is **kept**. Transferring a
+  /// buffer hands ownership to the Worker, and the Dart GC is unaware of the
+  /// transfer, so transferring a Dart-owned buffer can leave it retained. There
+  /// is no way to prove the source is already JS-owned (`bytes.toJS` on a
+  /// Dart-instantiated list is a cast whose backing ArrayBuffer is managed by
+  /// the Dart/Flutter runtime), and the request side is not a measured
+  /// bottleneck. The copy is deliberate, not a bug.
   ///
   /// Using [Uint8List.toJS] on a Dart-instantiated list returns a JSUint8Array
   /// whose backing ArrayBuffer is managed by the Dart/Flutter runtime.
@@ -255,7 +264,10 @@ class Bridge extends ChangeNotifier {
     }
   }
 
-  Future<Stream<Response>> rpcStream(Request req) async {
+  Future<Stream<Response>> rpcStream(
+    Request req, {
+    BackpressurePolicy? backpressure,
+  }) async {
     await _waitReady();
 
     final controller = StreamController<Response>();
@@ -308,6 +320,42 @@ class Bridge extends ChangeNotifier {
     _log.info('rpc stream: post message to $port');
     _worker.postMessage(m, t);
 
-    return controller.stream;
+    final policy = backpressure;
+    if (policy == null || policy.strategy == Backpressure.none) {
+      return controller.stream;
+    }
+    if (policy.strategy == Backpressure.block) {
+      // The web worker runs the same Go dispatcher, so the credit control
+      // request travels over the same envelope.
+      unawaited(_sendFlowCredit(port, policy.bufferSize));
+    }
+    return applyBackpressure(
+      controller.stream,
+      policy,
+      onDemand: policy.strategy == Backpressure.block
+          ? (credits) => unawaited(_sendFlowCredit(port, credits))
+          : null,
+    );
+  }
+
+  /// Sends a block-strategy credit grant to the Go worker producer over the
+  /// existing envelope (reserved [kFlowCreditPath]).
+  Future<void> _sendFlowCredit(Int64 port, int credits) async {
+    if (credits <= 0) {
+      return;
+    }
+    final payload = Uint8List(12);
+    final view = ByteData.sublistView(payload);
+    view.setInt64(0, port.toInt(), Endian.little);
+    view.setInt32(8, credits, Endian.little);
+    try {
+      await rpcUnsafe(
+        Request(
+          rpcRequest: RpcRequest(path: kFlowCreditPath, payload: payload),
+        ),
+      );
+    } catch (e) {
+      _log.warning('flow credit failed: $e');
+    }
   }
 }

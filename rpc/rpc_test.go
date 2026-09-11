@@ -77,6 +77,10 @@ func resetForTest(t *testing.T) *rpc {
 	r.pusher = nil
 	r.cancels = make(map[int64]context.CancelFunc)
 	r.mu.Unlock()
+	r.flowMu.Lock()
+	r.flowGates = make(map[int64]*FlowGate)
+	r.pendingFlowCredits = make(map[int64]int)
+	r.flowMu.Unlock()
 	entryPoint = nil
 	handleRPC = nil
 	t.Cleanup(func() {

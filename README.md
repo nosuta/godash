@@ -26,6 +26,9 @@ Projects depend on it via a local path (`godash: path: ../godash`).
   - **sync unary** (`CallSync`) — no goroutine/`ReceivePort`/port round trip,
   - **packed hot path** (`option (godash.hot) = true;`) — bypasses protobuf
     entirely for scalar-only unary methods.
+- **Stream backpressure.** Opt-in per stream: `dropLatest` (conflate),
+  `bufferDrop` (ring buffer), `block` (lossless, with a Go credit signal) and
+  `batch`, applied in shared Dart on both transports.
 - **No code generation step for FFI bindings.** The native ABI is resolved
   dynamically; there is no ffigen/`exported.h` step.
 - **Explicit memory ownership** across the Dart↔Go boundary.
@@ -215,6 +218,45 @@ enums fall back to the envelope automatically — mixed mode is fine.
 success, non-zero on error. The packed layout uses natural C alignment in
 ascending field-number order, host (little-endian) byte order.
 
+### Stream backpressure
+
+Server-streaming methods accept an optional `BackpressurePolicy` that bounds how
+far a fast Go producer can run ahead of a slow Dart consumer. The strategies are
+implemented once in `lib/bridge/backpressure.dart`, above the transport, so they
+behave identically on native and web:
+
+```dart
+final client = EchoRpcClient();
+client.serverStream(req, backpressure: const BackpressurePolicy.dropLatest());
+```
+
+| strategy | behavior |
+|---|---|
+| `none` | pass-through (default) |
+| `dropLatest` | conflate: keep only the newest item, drop stale pending ones |
+| `bufferDrop` | bounded ring buffer; drop the oldest item on overflow |
+| `block` | lossless bounded buffer; pauses the producer when full |
+| `batch` | coalesce up to `batchMaxSize` or `batchMaxDelay`, then deliver |
+
+`block` uses a credit signal sent over the existing envelope (reserved
+`RpcRequest` path `/godash.flow/Credit`, no wire-format change). A Go streaming
+handler opts in with:
+
+```go
+gate := rpc.FlowFromContext(ctx)
+for {
+    if gate != nil {
+        if err := gate.Acquire(ctx); err != nil {
+            return err
+        }
+    }
+    ch <- response
+}
+```
+
+Handlers that do not call `FlowFromContext` are unaffected; for them `block`
+still applies Dart-side buffering and source pausing.
+
 ### Memory ownership (native)
 
 godash never frees memory with an allocator other than the one that allocated
@@ -342,6 +384,6 @@ The performance work is tracked in `PLAN.md`:
 | P2 sync FFI unary path | done |
 | P3 typed hot-path C exports | done |
 | follow-up: remove ffigen | done |
-| P4 request ownership transfer | not started |
-| P5 stream backpressure | not started |
+| P4 request ownership transfer | done |
+| P5 stream backpressure | done |
 | P6 SharedArrayBuffer (opt-in) | deferred |

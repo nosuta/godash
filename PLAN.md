@@ -138,28 +138,59 @@ via the envelope; envelope path still available for everything else.
 
 ### P4 — Request ownership transfer (one memcpy less on requests)
 
-- [ ] Dart allocates the request `BytesContainer` and **keeps it alive until the response
+- [x] Dart allocates the request `BytesContainer` and **keeps it alive until the response
       (or `Done` for streams) arrives**, then frees it (ownership moves to Go during
       processing; Go views it via `unsafe.Slice`, no `C.GoBytes` copy).
-- [ ] Add a `--js` equivalent: on web, evaluate whether the defensive re-copy (B6) can be
+      → Implemented with a shorter lifetime: the `RPC`/`CallSync` exports parse the
+      Dart-owned buffer **synchronously** via `unsafe.Slice` and `UnmarshalVT` copies the
+      message fields into Go memory, so Go never retains the buffer. Dart therefore frees
+      it as soon as the export returns — no `C.GoBytes`, and no lifetime bookkeeping.
+- [x] Add a `--js` equivalent: on web, evaluate whether the defensive re-copy (B6) can be
       skipped when the source list is already JS-owned; otherwise keep it (documented).
-- [ ] Handle the timeout path: if Go never responds, Dart must still free its buffer
+      → evaluated and **kept** (a transferred buffer must be JS-owned; `bytes.toJS` on a
+      Dart list is not independently owned). Documented in `bridge_web.dart`.
+- [x] Handle the timeout path: if Go never responds, Dart must still free its buffer
       (tie buffer release to the existing 10s-timeout / cancel logic in `rpc/rpc.go`).
+      → Simplifies to immediate release after the export returns, so cancel/timeout can
+      never leak the request buffer.
 
 Acceptance: request path has zero copies between serialize and unmarshal (native);
-no leaks under cancel/timeout tests from P0.
+no leaks under cancel/timeout tests from P0. → met
 
 ### P5 — Stream backpressure (pure Dart, both transports)
 
 Port nitro's four strategies onto the Dart stream layer (`rpcStream` / push stream):
 
-- [ ] `dropLatest`, `bufferDrop` (ring buffer), `block` (pause the Go producer via a
+- [x] `dropLatest`, `bufferDrop` (ring buffer), `block` (pause the Go producer via a
       control push), `batch` (`batchMaxSize` — coalesce items before delivery).
-- [ ] Strategy is per-stream opt-in (annotation/parameter on generated stream APIs).
-- [ ] `block` requires a Go-side consumer signal — implement via a control `Request`
+      → `lib/bridge/backpressure.dart`: pure-Dart transformer applied above the
+      transport (so identical on native and web). `dropLatest` = conflate (keep the
+      newest), `bufferDrop` = bounded ring buffer (drop oldest), `block` = lossless
+      bounded buffer that pauses the source, `batch` = flush at `batchMaxSize` or
+      `batchMaxDelay`. `none` is the pass-through default.
+- [x] Strategy is per-stream opt-in (annotation/parameter on generated stream APIs).
+      → generated Dart streaming methods take `{BackpressurePolicy? backpressure}`
+      and forward it through `Transport.stream` → `Bridge.rpcStream`
+- [x] `block` requires a Go-side consumer signal — implement via a control `Request`
       over the existing envelope (no wire format change).
+      → reserved `RpcRequest` path `/godash.flow/Credit` intercepted in `rpc.Call`
+      (never reaches the dispatcher); `rpc.FlowGate` + `rpc.FlowFromContext` let a
+      streaming handler `Acquire` credits before producing each item. Gates start
+      **unbounded** (so handlers may call `Acquire` unconditionally without
+      deadlocking); the first credit grant switches the gate to bounded mode and
+      becomes its window, and later grants add. Dart grants credits as the consumer
+      drains (`Bridge._sendFlowCredit`) on both transports; grants that arrive
+      before the stream request are buffered and applied on registration.
 
 Acceptance: backpressure unit tests for all four strategies on both native and web bridges.
+→ met: the strategies are transport-agnostic pure Dart (`test/bridge/backpressure_test.dart`
+covers all four + `none` + cancellation), and the Go credit gate is covered by
+`rpc/flow_test.go` including the end-to-end control-request path.
+
+Note (deviation): nitro implements backpressure on the native producer; godash
+implements the buffering at the shared Dart stream layer, with the Go `FlowGate`
+as the opt-in lossless `block` signal. Handlers that never call `FlowFromContext`
+are unaffected.
 
 ### P6 — (optional, later) SharedArrayBuffer on web
 
@@ -168,7 +199,9 @@ isolation headers. Opt-in only; skip until P5 is stable.
 
 ## Target ownership & allocator rules (after P1/P4)
 
-1. Request buffer: allocated by Dart, freed by Dart (after response/Done/timeout).
+1. Request buffer: allocated by Dart, freed by Dart immediately after the
+   synchronous export returns. The export parses it zero-copy via `unsafe.Slice`
+   and `UnmarshalVT` copies the fields into Go memory, so Go never retains it.
 2. Response buffer: allocated by Go (C.malloc via `BytesToPointerAddress`), freed by Dart
    **immediately after parse** (P1 keeps this, minus the copy).
 3. No buffer is ever freed by a different runtime than the one that allocated it
@@ -179,11 +212,11 @@ isolation headers. Opt-in only; skip until P5 is stable.
 
 | Risk | Mitigation |
 |---|---|
-| Ownership bugs (use-after-free, leaks) under cancel/timeout | P0 tests incl. cancel/timeout paths; P4 frees tied to existing timeout logic |
+| Ownership bugs (use-after-free, leaks) under cancel/timeout | P0 tests incl. cancel/timeout paths; P4 releases the request buffer immediately after the synchronous export, so cancel/timeout cannot leak it |
 | Sync path (P2) blocks platform thread on slow handlers | Document contract; keep async path for streams/long work |
 | P3 codegen complexity (two protoc plugins) | Mixed-mode fallback; ship per-service incrementally |
 | TinyGo wasm constraints | Typed exports are native-only; web always uses the envelope (no new wasm ABI surface) |
-| GC retention gotcha on web transfers (documented in `bridge_web.dart:91-111`) | Keep the defensive copy on request side until proven unnecessary |
+| GC retention gotcha on web transfers (documented in `bridge_web.dart`) | Kept and documented (P4 evaluation); request side is not a measured bottleneck |
 
 ## Status
 
@@ -193,6 +226,7 @@ isolation headers. Opt-in only; skip until P5 is stable.
 | P1 Response zero-copy + allocator contract | done (zero-copy parse + `FreeBytesContainer` contract; delta in `benchmark/RESULTS.md`) |
 | P2 Sync FFI unary path | done (`CallSync` + `rpcSync`; unary p50 40 → 14 µs) |
 | P3 Typed hot-path C exports | done (`godash.hot` + packed `void*` ABI; hot mean ~0.5 µs) |
-| P4 Request ownership transfer | not started |
-| P5 Stream backpressure | not started |
+| follow-up: remove ffigen | done (hand-written dynamic `native_library.dart`) |
+| P4 Request ownership transfer | done (zero-copy request parse; no `C.GoBytes`) |
+| P5 Stream backpressure | done (pure-Dart strategies + `rpc.FlowGate` credit signal) |
 | P6 SharedArrayBuffer (opt-in) | deferred |

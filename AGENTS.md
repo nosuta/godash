@@ -134,6 +134,26 @@ exports are resolved dynamically in `Bridge.hotRaw` (cached per symbol) using
 `_lib.handle`. Keep the `BytesContainer` struct layout in sync with the cgo
 preamble (`void* message; int size;`).
 
+### 5. Stream backpressure contract
+
+- Strategies live in `lib/bridge/backpressure.dart` (pure Dart, applied above the
+  transport), so native and web share one implementation. Do not push buffering
+  logic into a single transport.
+- `Backpressure.block` is the only lossless strategy: it pauses the source and
+  reports drained slots via `onDemand`, which `Bridge._sendFlowCredit` turns into
+  a credit grant over the reserved `RpcRequest` path `/godash.flow/Credit`.
+- That path is intercepted in `rpc.Call` **before** `handleRPC`; it must never
+  reach an application handler. `rpc.FlowFromContext` exposes the per-stream
+  `FlowGate`; handlers opt in by calling `Acquire`. Gates start **unbounded**
+  (Acquire is a no-op) and switch to bounded on the first credit grant, so a
+  handler can call `Acquire` unconditionally. Handlers that don't are unaffected.
+  The Dart and Go constants must stay in sync
+  (`kFlowCreditPath` / `rpc.FlowCreditPath`).
+- The credit payload is little-endian: `[port int64][credits int32]` (12 bytes).
+- Credits for a not-yet-registered stream port are buffered and applied when the
+  stream's gate is registered (the control request and the stream request may be
+  dispatched in either order).
+
 ## Code generation pipeline
 
 `godash prepare` (in a project) runs, roughly:
@@ -175,7 +195,7 @@ output. `cmd/godash/wiring_gen_test.go` covers the wiring renderers.
 ## Phase status
 
 Tracked in `PLAN.md`: P0 (tests), P1 (response zero-copy + allocator contract),
-P2 (sync unary), P3 (hot path) and the ffigen removal are **done**. Next: P4
-(request ownership transfer) and P5 (stream backpressure). Update both the phase
-checkboxes and the status table there, and record benchmark deltas in
-`benchmark/RESULTS.md`.
+P2 (sync unary), P3 (hot path), the ffigen removal, P4 (request ownership
+transfer) and P5 (stream backpressure) are **done**. Next: P6 (optional
+SharedArrayBuffer on web). Update both the phase checkboxes and the status table
+there, and record benchmark deltas in `benchmark/RESULTS.md`.

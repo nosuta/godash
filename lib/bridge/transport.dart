@@ -3,6 +3,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:godash/bridge/backpressure.dart';
 import 'package:godash/bridge/bridge.dart';
 import 'package:godash/pb/core.pb.dart' as pb;
 
@@ -47,14 +48,18 @@ class Transport {
   Stream<O> stream<I extends Object, O extends Object>(
     String path,
     I input,
-    O Function() outputFactory,
-  ) async* {
+    O Function() outputFactory, {
+    BackpressurePolicy? backpressure,
+  }) async* {
     final payload = (input as dynamic).writeToBuffer();
     final req = pb.Request(
       rpcRequest: pb.RpcRequest(path: path, payload: payload),
     );
 
-    final respStream = await _bridge.rpcStream(req);
+    final respStream = await _bridge.rpcStream(
+      req,
+      backpressure: backpressure,
+    );
     await for (final resp in respStream) {
       if (resp.hasError()) {
         throw Exception('[${resp.error.code}] ${resp.error.message}');

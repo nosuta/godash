@@ -6,7 +6,8 @@
 /// - Requests: Dart allocates the serialized envelope in a malloc'd
 ///   [BytesContainer] (see [bytesToBytesContainerPointer]) and frees it with
 ///   [freeBytesContainerPointer] right after the synchronous `RPC` export
-///   returns (the Go side copies the bytes in before spawning its goroutine).
+///   returns (the Go side parses it zero-copy via `unsafe.Slice` before
+///   spawning its goroutine).
 /// - Responses/pushes: Go allocates via `BytesToPointerAddress`; Dart parses
 ///   directly from the `asTypedList` view (protobuf parsing copies the bytes
 ///   into the message object, so no defensive copy is needed) and then frees

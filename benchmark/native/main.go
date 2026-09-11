@@ -48,26 +48,24 @@ func InitializeDartAPI(api unsafe.Pointer) C.int64_t {
 
 //export RPC
 func RPC(port C.int64_t, payload *C.BytesContainer) {
-	// The request container is allocated by Dart and freed by Dart right
-	// after this export returns (see the allocator contract in
-	// dart_api/bridge.h). Never free it here.
-	b := C.GoBytes(payload.message, payload.size)
+	// Zero-copy request parse (PLAN.md P4): read the Dart-owned C buffer
+	// directly. Never free it from Go (allocator contract); Dart frees it as
+	// soon as this export returns, and UnmarshalVT copies the fields.
+	req := &pb.Request{}
+	if err := req.UnmarshalVT(unsafe.Slice((*byte)(payload.message), int(payload.size))); err != nil {
+		e, _ := (&pb.Response{
+			Responses: &pb.Response_Error{Error: &pb.Error{Message: err.Error()}},
+		}).MarshalVT()
+		addr := dart_api.BytesToPointerAddress(e)
+		if err := dart_api.SendPointerAddress(int64(port), addr); err != nil {
+			slog.Warn("dart_api.SendPointerAddress failed", "error", err.Error())
+		}
+		return
+	}
 
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*10000)
 		defer cancel()
-		req := &pb.Request{}
-		if err := req.UnmarshalVT(b); err != nil {
-			e, _ := (&pb.Response{
-				Responses: &pb.Response_Error{Error: &pb.Error{Message: err.Error()}},
-			}).MarshalVT()
-			addr := dart_api.BytesToPointerAddress(e)
-			if err := dart_api.SendPointerAddress(int64(port), addr); err != nil {
-				slog.Warn("dart_api.SendPointerAddress failed", "error", err.Error())
-			}
-			return
-		}
-
 		for ret := range rpc.RPC().Call(ctx, req) {
 			addr := dart_api.BytesToPointerAddress(ret)
 			if err := dart_api.SendPointerAddress(int64(port), addr); err != nil {
@@ -95,11 +93,11 @@ func FreeBytesContainer(payload *C.BytesContainer) {
 
 //export CallSync
 func CallSync(payload *C.BytesContainer) *C.BytesContainer {
-	b := C.GoBytes(payload.message, payload.size)
+	// Zero-copy: parse directly from the Dart-owned C buffer.
 	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*10000)
 	defer cancel()
 
-	rb, err := rpc.RPC().CallSync(ctx, b)
+	rb, err := rpc.RPC().CallSync(ctx, unsafe.Slice((*byte)(payload.message), int(payload.size)))
 	if err != nil {
 		e, merr := (&pb.Response{
 			Responses: &pb.Response_Error{

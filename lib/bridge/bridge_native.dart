@@ -14,6 +14,7 @@ import 'package:path_provider/path_provider.dart';
 
 import 'native_bytes.dart';
 import 'native_library.dart';
+import 'backpressure.dart';
 
 // ffi.Int32 is used (not the bare Int32) because package:fixnum also exports
 // an Int32 class, which otherwise shadows dart:ffi's native type.
@@ -174,8 +175,9 @@ class Bridge extends ChangeNotifier {
 
     final buf = req.writeToBuffer();
     final payload = bytesToBytesContainerPointer(buf);
-    // The RPC export copies the request synchronously before spawning its
-    // goroutine, so the Dart-owned container can be freed right away.
+    // The RPC export parses the request zero-copy from this C buffer on the
+    // calling thread before spawning its goroutine, so the Dart-owned
+    // container can be freed as soon as the export returns.
     _lib.RPC(nativePort, payload);
     freeBytesContainerPointer(payload);
 
@@ -250,7 +252,10 @@ class Bridge extends ChangeNotifier {
     }
   }
 
-  Future<Stream<Response>> rpcStream(Request req) async {
+  Future<Stream<Response>> rpcStream(
+    Request req, {
+    BackpressurePolicy? backpressure,
+  }) async {
     await _waitReady();
 
     final controller = StreamController<Response>();
@@ -305,12 +310,48 @@ class Bridge extends ChangeNotifier {
 
     final buf = req.writeToBuffer();
     final payload = bytesToBytesContainerPointer(buf);
-    // The RPC export copies the request synchronously before spawning its
-    // goroutine, so the Dart-owned container can be freed right away.
+    // The RPC export parses the request zero-copy from this C buffer on the
+    // calling thread before spawning its goroutine, so the Dart-owned
+    // container can be freed as soon as the export returns.
     _lib.RPC(nativePort, payload);
     freeBytesContainerPointer(payload);
 
-    return controller.stream;
+    final policy = backpressure;
+    if (policy == null || policy.strategy == Backpressure.none) {
+      return controller.stream;
+    }
+    if (policy.strategy == Backpressure.block) {
+      // Grant the initial credit window so the Go producer can start.
+      unawaited(_sendFlowCredit(nativePort, policy.bufferSize));
+    }
+    return applyBackpressure(
+      controller.stream,
+      policy,
+      onDemand: policy.strategy == Backpressure.block
+          ? (credits) => unawaited(_sendFlowCredit(nativePort, credits))
+          : null,
+    );
+  }
+
+  /// Sends a block-strategy credit grant to the Go producer over the existing
+  /// envelope (reserved [kFlowCreditPath], no wire-format change).
+  Future<void> _sendFlowCredit(int port, int credits) async {
+    if (credits <= 0) {
+      return;
+    }
+    final payload = Uint8List(12);
+    final view = ByteData.sublistView(payload);
+    view.setInt64(0, port, Endian.little);
+    view.setInt32(8, credits, Endian.little);
+    try {
+      await rpc(
+        Request(
+          rpcRequest: RpcRequest(path: kFlowCreditPath, payload: payload),
+        ),
+      );
+    } catch (e) {
+      _log.warning('flow credit failed: $e');
+    }
   }
 
   Response pointerAddressToResponse(dynamic pointerAddr) {

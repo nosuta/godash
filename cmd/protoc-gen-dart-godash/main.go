@@ -61,6 +61,14 @@ func generateFile(gen *protogen.Plugin, file *protogen.File) {
 			break
 		}
 	}
+	hasStreaming := false
+	for _, svc := range normalServices {
+		for _, m := range svc.Methods {
+			if m.Desc.IsStreamingServer() {
+				hasStreaming = true
+			}
+		}
+	}
 
 	if hasPush || len(reverseServices) > 0 {
 		g.P("import 'dart:async';")
@@ -77,6 +85,9 @@ func generateFile(gen *protogen.Plugin, file *protogen.File) {
 	}
 	if len(normalServices) > 0 {
 		g.P("import 'package:godash/bridge/transport.dart';")
+	}
+	if hasStreaming {
+		g.P("import 'package:godash/bridge/backpressure.dart';")
 	}
 	if len(reverseServices) > 0 || hasPush {
 		g.P("import 'package:fixnum/fixnum.dart';")
@@ -322,11 +333,15 @@ func generateNormalServiceClient(g *protogen.GeneratedFile, service *protogen.Se
 		}
 
 		if method.Desc.IsStreamingServer() {
-			g.P("  Stream<", resName, "> ", methodName, "(", reqName, " request) async* {")
+			g.P("  Stream<", resName, "> ", methodName, "(")
+			g.P("    ", reqName, " request, {")
+			g.P("    BackpressurePolicy? backpressure,")
+			g.P("  }) async* {")
 			g.P("    yield* _transport.stream(")
 			g.P("      '", fullPath, "',")
 			g.P("      request,")
 			g.P("      () => ", resName, "(),")
+			g.P("      backpressure: backpressure,")
 			g.P("    );")
 			g.P("  }")
 			g.P()

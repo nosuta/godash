@@ -147,13 +147,43 @@ Notes:
 
 Reproduce: `dart run benchmark/native/bench.dart --n 20000 --hot`.
 
+## P4 — Request ownership transfer
+
+Re-measured after P4 (2026-08-29): the `RPC` and `CallSync` exports no longer
+copy the request through `C.GoBytes`; they parse zero-copy from the Dart-owned
+buffer with `unsafe.Slice` (`UnmarshalVT` copies the fields into Go memory).
+Dart still frees the request container right after the export returns, so
+cancel/timeout cannot leak it.
+
+| payload | path | before P4 (p50/mean) | after P4 (p50/mean) |
+|---|---|---|---|
+| 64 B | async | 40 / ~47 µs | 40 / ~47 µs |
+| 64 B | sync | 14 / ~17 µs | 14 / ~17 µs |
+| 64 KiB | async | 77 / ~100 µs | 76 / ~95 µs |
+| 64 KiB | sync | 36 / ~51 µs | 34 / ~47 µs |
+| hot (int64) | hot | 0–1 / ~0.5 µs | 0–1 / ~0.47 µs |
+
+Notes:
+
+- The removed copy is one `memcpy` of the request payload. It is invisible at
+  64 B (the round trip is dominated by the transport) and visible as a few µs at
+  64 KiB, where the copy is 64 KiB.
+- The main deliverable is correctness: zero copies between serialize and
+  unmarshal on native, and no request-buffer lifetime bookkeeping (Dart frees
+  unconditionally right after the synchronous export).
+- Web keeps the defensive re-copy into a JS-owned `ArrayBuffer` (B6): a
+  transferred buffer must already be JS-owned. Evaluated and documented in
+  `lib/bridge/bridge_web.dart`.
+
+Reproduce: `dart run benchmark/native/bench.dart --n 5000 [--sync|--hot]`.
+
 ## Notes
 
 - The measured path includes protobuf `Request.writeToBuffer()` /
   `Response.fromBuffer()` on the Dart side and `MarshalVT`/`UnmarshalVT` on
-  the Go side, the `BytesContainer` copy-in, the goroutine spawn and the
-  `ReceivePort` round trip — i.e. everything P1 (response zero-copy) and
-  P2 (sync FFI unary path) target.
+  the Go side, the zero-copy request view (`unsafe.Slice`, P4), the goroutine
+  spawn and the `ReceivePort` round trip — i.e. everything P1 (response
+  zero-copy) and P2 (sync FFI unary path) target.
 - Native per-call cost breakdown of interest for later phases: the fixed
   goroutine + port overhead (~10 µs, B5) plus serialize/memcpy (B1–B4).
   Re-run this harness after each phase and append a row here.

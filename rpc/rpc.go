@@ -21,6 +21,12 @@ type rpc struct {
 	reversePending map[int64]chan []byte
 	reverseMu      sync.Mutex
 	reverseID      int64
+	// flowGates holds per-stream credit gates keyed by the stream port.
+	flowGates map[int64]*FlowGate
+	// pendingFlowCredits holds credit grants that arrived before the stream's
+	// gate was registered, keyed by stream port.
+	pendingFlowCredits map[int64]int
+	flowMu             sync.Mutex
 }
 
 func RPC() *rpc {
@@ -28,8 +34,10 @@ func RPC() *rpc {
 		return instance
 	}
 	instance = &rpc{
-		cancels:        make(map[int64]context.CancelFunc, 0),
-		reversePending: make(map[int64]chan []byte),
+		cancels:            make(map[int64]context.CancelFunc, 0),
+		reversePending:     make(map[int64]chan []byte),
+		flowGates:          make(map[int64]*FlowGate),
+		pendingFlowCredits: make(map[int64]int),
 	}
 	pb.SetReverseCallFn(instance.ReverseCall)
 	pb.SetPushFn(instance.Push)
@@ -137,13 +145,22 @@ func (r *rpc) Call(ctx context.Context, req *pb.Request) chan []byte {
 			}
 		case *pb.Request_RpcRequest:
 			slog.Debug("request: rpc", "path", v.RpcRequest.Path)
+			// Reserved control path: the Dart block-backpressure strategy
+			// grants producer credits here. Never reaches the dispatcher.
+			if v.RpcRequest.Path == FlowCreditPath {
+				r.receiveFlowCredit(v.RpcRequest.Payload)
+				break
+			}
 			if handleRPC == nil {
 				sendError(ch, fmt.Errorf("RPC handler not set"), 500)
 				break
 			}
+			gate := newFlowGate()
+			r.registerFlowGate(req.Port, gate)
+			rpcCtx := withFlowGate(ctx, gate)
 			rpcCh := make(chan *pb.Response)
 			go func() {
-				handleRPC(ctx, v.RpcRequest, rpcCh)
+				handleRPC(rpcCtx, v.RpcRequest, rpcCh)
 				close(rpcCh)
 			}()
 			for resp := range rpcCh {
@@ -154,6 +171,7 @@ func (r *rpc) Call(ctx context.Context, req *pb.Request) chan []byte {
 				}
 				ch <- e
 			}
+			r.unregisterFlowGate(req.Port, gate)
 		case *pb.Request_ReverseResponse:
 			slog.Info("request: reverse_response", "port", v.ReverseResponse.ReversePort)
 			r.receiveReverseResponse(v.ReverseResponse.ReversePort, v.ReverseResponse.Payload)
