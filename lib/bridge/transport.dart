@@ -18,7 +18,7 @@ class Transport {
       rpcRequest: pb.RpcRequest(path: path, payload: payload),
     );
 
-    final resp = await _bridge.rpc(req);
+    final resp = await _bridge.rpcUnary(req);
     if (resp.hasError()) {
       throw Exception('[${resp.error.code}] ${resp.error.message}');
     }

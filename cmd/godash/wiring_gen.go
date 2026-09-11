@@ -397,6 +397,36 @@ func FreeBytesContainer(payload *C.BytesContainer) {
 	// malloc.free so the allocating C allocator also performs the free.
 	C.GoDash_FreeBytesContainer(unsafe.Pointer(payload))
 }
+
+//export CallSync
+func CallSync(payload *C.BytesContainer) *C.BytesContainer {
+	// Synchronous unary fast path (PLAN.md P2): blocks the calling Dart
+	// platform thread until the unary handler returns, avoiding the
+	// goroutine + ReceivePort + port round trip of RPC. The request
+	// container is Dart-owned and freed by Dart right after this returns.
+	//
+	// Contract: only short-lived handlers (e.g. short DB reads/writes) may
+	// be called through CallSync; long-running work must stay on the async
+	// RPC path or it will freeze the platform thread.
+	b := C.GoBytes(payload.message, payload.size)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*10000)
+	defer cancel()
+
+	rb, err := rpc.RPC().CallSync(ctx, b)
+	if err != nil {
+		e, merr := (&pb.Response{
+			Responses: &pb.Response_Error{
+				Error: &pb.Error{Code: 500, Message: err.Error()},
+			},
+		}).MarshalVT()
+		if merr != nil {
+			slog.Error("MUST FIX, failed to marshal sync error response", "error", merr.Error())
+			return nil
+		}
+		rb = e
+	}
+	return (*C.BytesContainer)(dart_api.BytesToContainer(rb))
+}
 `, mod.Name+"/rpc")
 }
 

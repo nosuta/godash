@@ -225,6 +225,12 @@ class Bridge extends ChangeNotifier {
     return await rpcUnsafe(req);
   }
 
+  /// Unary RPC entry point used by [Transport.unary]. The synchronous FFI fast
+  /// path does not exist on the web (everything is postMessage-based), so this
+  /// is equivalent to [rpc]; the method keeps the Bridge interface shared
+  /// between native and web.
+  Future<Response> rpcUnary(Request req) => rpc(req);
+
   /// Sends a ReverseResponse back to Go for a Go->Dart->Go ReverseService call.
   /// [reversePort] must match [Push.reversePort] from the incoming push.
   Future<void> sendReverseResponse(Int64 reversePort, List<int> payload) async {

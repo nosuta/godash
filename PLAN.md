@@ -81,15 +81,21 @@ Acceptance: no copies of response bytes on the Dart side; tests green; benchmark
 
 ### P2 — Sync FFI unary path (the latency core)
 
-- [ ] New export in generated `go/main.go` (via `cmd/godash/wiring_gen.go`):
+- [x] New export in generated `go/main.go` (via `cmd/godash/wiring_gen.go`):
       `Response* CallSync(payload *C.BytesContainer)` — blocking unary call, no goroutine,
       no `ReceivePort`, no port round-trip.
-- [ ] Dart side: `bridge_native.dart` gains a `rpcSync` fast path used by unary RPCs
+      → `//export CallSync` calling `rpc.RPC().CallSync` (new sync dispatcher in `rpc/rpc.go`)
+- [x] Dart side: `bridge_native.dart` gains a `rpcSync` fast path used by unary RPCs
       (streaming / Reverse-RPC / cancel stay async).
-- [ ] Document the contract: sync path blocks the platform thread → only for short-lived
+      → `Bridge.rpcSync` + `Bridge.rpcUnary`; `Transport.unary` now calls `rpcUnary`
+      (web keeps the async path via a compatible `rpcUnary` delegate)
+- [x] Document the contract: sync path blocks the platform thread → only for short-lived
       handlers (short DB reads/writes are fine; long work must go async).
-- [ ] Re-run benchmark; target: sub-10 µs end-to-end for small unary payloads on native
+      → doc comments on `Bridge.rpcSync`, `rpc.CallSync` and the generated `CallSync` export
+- [x] Re-run benchmark; target: sub-10 µs end-to-end for small unary payloads on native
       (was ~10 µs+ fixed overhead + copies).
+      → `benchmark/RESULTS.md` "P2" section: p50 14 µs / min 6 µs (from 40 µs async);
+      sub-10 µs p50 deferred to P3 (protobuf bypass)
 
 Acceptance: unary EchoService round-trip measurably faster; streaming paths unchanged.
 
@@ -168,7 +174,7 @@ isolation headers. Opt-in only; skip until P5 is stable.
 |---|---|
 | P0 Test foundation | done (tests + baseline in `benchmark/RESULTS.md`) |
 | P1 Response zero-copy + allocator contract | done (zero-copy parse + `FreeBytesContainer` contract; delta in `benchmark/RESULTS.md`) |
-| P2 Sync FFI unary path | not started |
+| P2 Sync FFI unary path | done (`CallSync` + `rpcSync`; unary p50 40 → 14 µs) |
 | P3 Typed hot-path C exports | not started |
 | P4 Request ownership transfer | not started |
 | P5 Stream backpressure | not started |

@@ -34,16 +34,26 @@ func PointerAddr(bc unsafe.Pointer) C.int64_t {
 	return C.PointerAddr(bc)
 }
 
-func BytesToPointerAddress(b []byte) int64 {
-	// Ownership: the container and its message buffer are allocated here with
-	// the C allocator and must be freed *through the Go-side free path*
-	// (Dart calls the exported `FreeBytesContainer` symbol, which runs
-	// GoDash_FreeBytesContainer in bridge.c) — never with Dart's malloc.free.
+// BytesToContainer allocates a BytesContainer on the C heap holding a copy of
+// b and returns the container pointer. Used by the synchronous FFI fast path
+// (CallSync), where the response is returned directly instead of being posted
+// to a Dart port.
+func BytesToContainer(b []byte) unsafe.Pointer {
 	bc := (*C.BytesContainer)(C.malloc(C.size_t(C.sizeof_BytesContainer)))
 	bc.message = C.CBytes(b)
 	bc.size = C.int(len(b))
-	address := PointerAddr(unsafe.Pointer(bc))
-	return int64(address)
+	return unsafe.Pointer(bc)
+}
+
+// BytesToPointerAddress is the async-path variant of BytesToContainer: it
+// returns the container address as an int64 suitable for GoDart_PostPointerAddress.
+//
+// Ownership: the container and its message buffer are allocated here with
+// the C allocator and must be freed *through the Go-side free path*
+// (Dart calls the exported `FreeBytesContainer` symbol, which runs
+// GoDash_FreeBytesContainer in bridge.c) — never with Dart's malloc.free.
+func BytesToPointerAddress(b []byte) int64 {
+	return int64(PointerAddr(BytesToContainer(b)))
 }
 
 // Don't close the port in Go when the port is created in Dart.

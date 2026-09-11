@@ -166,6 +166,39 @@ func (r *rpc) Call(ctx context.Context, req *pb.Request) chan []byte {
 	return ch
 }
 
+// CallSync dispatches a single unary RpcRequest on the calling goroutine and
+// returns the marshaled response. Unlike Call it spawns no goroutine and
+// registers no port-keyed cancel — it exists for the sync FFI unary fast path
+// (PLAN.md P2), where the Dart platform thread blocks until the handler
+// returns.
+//
+// Contract: only short-lived unary handlers may be reached this way. A
+// streaming handler that emits more than one response will block on its second
+// send (the response channel is buffered for exactly one item) and must use
+// Call instead.
+func (r *rpc) CallSync(ctx context.Context, payload []byte) ([]byte, error) {
+	req := &pb.Request{}
+	if err := req.UnmarshalVT(payload); err != nil {
+		return nil, fmt.Errorf("unmarshal request: %w", err)
+	}
+	v, ok := req.Requests.(*pb.Request_RpcRequest)
+	if !ok {
+		return nil, fmt.Errorf("CallSync supports only RpcRequest, got %T", req.Requests)
+	}
+	if handleRPC == nil {
+		return nil, fmt.Errorf("RPC handler not set")
+	}
+
+	ch := make(chan *pb.Response, 1)
+	handleRPC(ctx, v.RpcRequest, ch)
+	select {
+	case resp := <-ch:
+		return resp.MarshalVT()
+	default:
+		return nil, fmt.Errorf("unary handler produced no response")
+	}
+}
+
 func sendError(ch chan<- []byte, err error, code int32) {
 	slog.Error("sending error", "message", err)
 	message := ""

@@ -278,6 +278,101 @@ func TestCallRPCUnary(t *testing.T) {
 	}
 }
 
+func TestCallSyncUnary(t *testing.T) {
+	r := resetForTest(t)
+	SetHandleRPC(func(ctx context.Context, req *pb.RpcRequest, ch chan<- *pb.Response) {
+		if req.Path != "/echo" {
+			t.Errorf("unexpected path: %q", req.Path)
+		}
+		if string(req.Payload) != "hello" {
+			t.Errorf("unexpected payload: %q", req.Payload)
+		}
+		if ctx == nil || ctx.Err() != nil {
+			t.Errorf("handler ctx should be live")
+		}
+		ch <- &pb.Response{
+			Responses: &pb.Response_RpcResponse{
+				RpcResponse: &pb.RpcResponse{Payload: []byte("world")},
+			},
+		}
+	})
+
+	req := &pb.Request{
+		Requests: &pb.Request_RpcRequest{RpcRequest: &pb.RpcRequest{
+			Path:    "/echo",
+			Payload: []byte("hello"),
+		}},
+	}
+	payload, err := req.MarshalVT()
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+	got, err := r.CallSync(context.Background(), payload)
+	if err != nil {
+		t.Fatalf("CallSync failed: %v", err)
+	}
+	resp := parseResponse(t, got)
+	if resp.GetRpcResponse() == nil || string(resp.GetRpcResponse().GetPayload()) != "world" {
+		t.Fatalf("unexpected response: %+v", resp)
+	}
+
+	// The sync path must not register a port-keyed cancel entry.
+	r.mu.Lock()
+	n := len(r.cancels)
+	r.mu.Unlock()
+	if n != 0 {
+		t.Fatalf("CallSync must not register cancels, got %d", n)
+	}
+}
+
+func TestCallSyncWithoutHandler(t *testing.T) {
+	r := resetForTest(t)
+	req := &pb.Request{
+		Requests: &pb.Request_RpcRequest{RpcRequest: &pb.RpcRequest{Path: "/echo"}},
+	}
+	payload, _ := req.MarshalVT()
+	_, err := r.CallSync(context.Background(), payload)
+	if err == nil || !strings.Contains(err.Error(), "RPC handler not set") {
+		t.Fatalf("expected handler not set error, got %v", err)
+	}
+}
+
+func TestCallSyncUnsupportedRequest(t *testing.T) {
+	r := resetForTest(t)
+	req := &pb.Request{
+		Requests: &pb.Request_Init{Init: &pb.Init{PushPort: 1}},
+	}
+	payload, _ := req.MarshalVT()
+	_, err := r.CallSync(context.Background(), payload)
+	if err == nil || !strings.Contains(err.Error(), "supports only RpcRequest") {
+		t.Fatalf("expected unsupported request error, got %v", err)
+	}
+}
+
+func TestCallSyncEmptyResponse(t *testing.T) {
+	r := resetForTest(t)
+	// A handler that returns without sending anything (e.g. an unimplemented
+	// path) must surface an error rather than block.
+	SetHandleRPC(func(ctx context.Context, req *pb.RpcRequest, ch chan<- *pb.Response) {})
+	req := &pb.Request{
+		Requests: &pb.Request_RpcRequest{RpcRequest: &pb.RpcRequest{Path: "/void"}},
+	}
+	payload, _ := req.MarshalVT()
+	_, err := r.CallSync(context.Background(), payload)
+	if err == nil || !strings.Contains(err.Error(), "no response") {
+		t.Fatalf("expected no response error, got %v", err)
+	}
+}
+
+func TestCallSyncBadPayload(t *testing.T) {
+	r := resetForTest(t)
+	SetHandleRPC(func(ctx context.Context, req *pb.RpcRequest, ch chan<- *pb.Response) {})
+	_, err := r.CallSync(context.Background(), []byte{0xFF, 0xFF, 0xFF, 0xFF})
+	if err == nil || !strings.Contains(err.Error(), "unmarshal request") {
+		t.Fatalf("expected unmarshal error, got %v", err)
+	}
+}
+
 func TestCallRPCStreamOrdering(t *testing.T) {
 	resetForTest(t)
 	const n = 5

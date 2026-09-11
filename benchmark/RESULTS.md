@@ -90,6 +90,33 @@ Notes:
   correctness plus the zero-copy parse; bigger latency wins land in P2 (sync
   unary path).
 
+## P2 — Sync FFI unary path
+
+Re-measured after P2 (2026-08-29): unary RPCs now use the `CallSync` export
+(`Response* CallSync(BytesContainer*)`, no goroutine, no `ReceivePort`, no port
+round trip) via `Bridge.rpcSync` / `Bridge.rpcUnary` / `Transport.unary`. The
+benchmark gained a `--sync` mode (`benchmark/native/bench.dart`). Same machine
+and session as the P1 run.
+
+| payload | async p50 / mean | sync p50 / mean | speedup |
+|---|---|---|---|
+| 64 B | 40.0 / 46.5 µs | 14.0 / 16.9 µs | 2.9× p50 |
+| 64 KiB | 77.0 / 100.0 µs | 36.0 / 50.9 µs | 2.1× p50 |
+
+Sync 64 B (5000 iters): min 6 µs, p50 14 µs, p90 23 µs, p99 ~80 µs, mean
+~17 µs.
+
+Notes:
+
+- The sub-10 µs p50 target is not met (p50 14 µs, min 6 µs). The remaining
+  cost is the protobuf serialize/parse pair, two malloc/free pairs and two cgo
+  transitions (`CallSync` in, `FreeBytesContainer` out). P3 (packed structs,
+  bypassing protobuf) is what would push p50 under 10 µs.
+- Streaming, Reverse-RPC and cancel stay on the async envelope path; only
+  unary calls take the sync fast path.
+
+Reproduce: `dart run benchmark/native/bench.dart --n 5000 --payload 64 --sync`.
+
 ## Notes
 
 - The measured path includes protobuf `Request.writeToBuffer()` /

@@ -92,3 +92,25 @@ func RPC(port C.int64_t, payload *C.BytesContainer) {
 func FreeBytesContainer(payload *C.BytesContainer) {
 	C.GoDash_FreeBytesContainer(unsafe.Pointer(payload))
 }
+
+//export CallSync
+func CallSync(payload *C.BytesContainer) *C.BytesContainer {
+	b := C.GoBytes(payload.message, payload.size)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*10000)
+	defer cancel()
+
+	rb, err := rpc.RPC().CallSync(ctx, b)
+	if err != nil {
+		e, merr := (&pb.Response{
+			Responses: &pb.Response_Error{
+				Error: &pb.Error{Code: 500, Message: err.Error()},
+			},
+		}).MarshalVT()
+		if merr != nil {
+			slog.Error("failed to marshal sync error response", "error", merr.Error())
+			return nil
+		}
+		rb = e
+	}
+	return (*C.BytesContainer)(dart_api.BytesToContainer(rb))
+}

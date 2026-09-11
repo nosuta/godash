@@ -53,6 +53,20 @@ class NativeLibrary {
       _FreeBytesContainerPtr.asFunction<
         void Function(ffi.Pointer<BytesContainer>)
       >();
+
+  ffi.Pointer<BytesContainer> CallSync(ffi.Pointer<BytesContainer> payload) {
+    return _CallSync(payload);
+  }
+
+  late final _CallSyncPtr = _lookup<
+    ffi.NativeFunction<
+      ffi.Pointer<BytesContainer> Function(ffi.Pointer<BytesContainer>)
+    >
+  >('CallSync');
+  late final _CallSync =
+      _CallSyncPtr.asFunction<
+        ffi.Pointer<BytesContainer> Function(ffi.Pointer<BytesContainer>)
+      >();
 }
 
 final class __mbstate_t extends ffi.Union {

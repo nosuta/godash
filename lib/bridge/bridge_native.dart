@@ -173,6 +173,39 @@ class Bridge extends ChangeNotifier {
     return comp.future;
   }
 
+  /// Synchronous unary fast path (PLAN.md P2).
+  ///
+  /// Blocks the calling (platform) thread until the Go handler returns — the
+  /// goroutine, `ReceivePort` and port round trip of [rpc] are skipped
+  /// entirely. Response containers are Go-allocated and freed through
+  /// `FreeBytesContainer` after parsing (see [native_bytes.dart]).
+  ///
+  /// Contract: only short-lived handlers (e.g. short DB reads/writes) may be
+  /// called this way. Long-running work must use the async [rpc] path or it
+  /// will freeze the platform thread. Requires [ready]; callers normally use
+  /// [rpcUnary], which waits for readiness first.
+  Response rpcSync(Request req) {
+    if (!ready) {
+      throw StateError(
+        'rpcSync requires a ready bridge; use rpc() before Init completes',
+      );
+    }
+    final payload = bytesToBytesContainerPointer(req.writeToBuffer());
+    final respPtr = _lib.CallSync(payload);
+    freeBytesContainerPointer(payload);
+    if (respPtr.address == nullptr.address) {
+      throw Exception('CallSync returned a null response');
+    }
+    return responseFromPointerAddress(respPtr.address);
+  }
+
+  /// Unary RPC entry point used by [Transport.unary]: waits for readiness and
+  /// then takes the sync fast path on native.
+  Future<Response> rpcUnary(Request req) async {
+    await _waitReady();
+    return rpcSync(req);
+  }
+
   Future<Stream<Response>> rpcStream(Request req) async {
     await _waitReady();
 
