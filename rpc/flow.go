@@ -42,13 +42,14 @@ const flowCreditPayloadLen = 12
 //	}
 //
 // Handlers that never call [Acquire] are unaffected; for them the client's
-// `block` policy degrades to Dart-side buffering.
+// `block` policy degrades to Dart-side buffering. Multiple goroutines may call
+// [Acquire] concurrently.
 type FlowGate struct {
 	mu      sync.Mutex
 	bounded bool
 	credits int
 	closed  bool
-	waiter  chan struct{}
+	waiters []chan struct{}
 }
 
 // newFlowGate returns an unbounded gate. It becomes bounded on the first
@@ -59,6 +60,7 @@ func newFlowGate() *FlowGate {
 
 // AddCredits grants n credits. The first call switches the gate to bounded mode
 // (n becomes the initial window); later calls add to the remaining credits.
+// All blocked waiters are woken to re-check.
 func (g *FlowGate) AddCredits(n int) {
 	if n <= 0 {
 		return
@@ -69,11 +71,11 @@ func (g *FlowGate) AddCredits(n int) {
 		g.credits = 0
 	}
 	g.credits += n
-	waiter := g.waiter
-	g.waiter = nil
+	waiters := g.waiters
+	g.waiters = nil
 	g.mu.Unlock()
-	if waiter != nil {
-		close(waiter)
+	for _, w := range waiters {
+		close(w)
 	}
 }
 
@@ -81,58 +83,50 @@ func (g *FlowGate) AddCredits(n int) {
 // unbounded, blocks while bounded with no credits left, and returns ctx.Err()
 // on cancellation or an error once the gate is closed.
 func (g *FlowGate) Acquire(ctx context.Context) error {
-	g.mu.Lock()
-	if !g.bounded {
-		g.mu.Unlock()
-		return nil
-	}
-	if g.credits > 0 {
-		g.credits--
-		g.mu.Unlock()
-		return nil
-	}
-	if g.closed {
-		g.mu.Unlock()
-		return fmt.Errorf("flow gate is closed")
-	}
-	waiter := make(chan struct{})
-	g.waiter = waiter
-	g.mu.Unlock()
-
-	select {
-	case <-waiter:
+	for {
 		g.mu.Lock()
-		switch {
-		case g.credits > 0:
+		if !g.bounded {
+			g.mu.Unlock()
+			return nil
+		}
+		if g.credits > 0 {
 			g.credits--
 			g.mu.Unlock()
 			return nil
-		case g.closed:
+		}
+		if g.closed {
 			g.mu.Unlock()
 			return fmt.Errorf("flow gate is closed")
-		default:
-			// Spurious wake (e.g. AddCredits raced with cancellation); retry.
-			g.mu.Unlock()
-			return g.Acquire(ctx)
 		}
-	case <-ctx.Done():
-		g.mu.Lock()
-		if g.waiter == waiter {
-			g.waiter = nil
-		}
+		w := make(chan struct{})
+		g.waiters = append(g.waiters, w)
 		g.mu.Unlock()
-		return ctx.Err()
+
+		select {
+		case <-w:
+			// Re-check: another waiter may have taken the credit.
+		case <-ctx.Done():
+			g.mu.Lock()
+			for i, x := range g.waiters {
+				if x == w {
+					g.waiters = append(g.waiters[:i], g.waiters[i+1:]...)
+					break
+				}
+			}
+			g.mu.Unlock()
+			return ctx.Err()
+		}
 	}
 }
 
 func (g *FlowGate) close() {
 	g.mu.Lock()
 	g.closed = true
-	waiter := g.waiter
-	g.waiter = nil
+	waiters := g.waiters
+	g.waiters = nil
 	g.mu.Unlock()
-	if waiter != nil {
-		close(waiter)
+	for _, w := range waiters {
+		close(w)
 	}
 }
 

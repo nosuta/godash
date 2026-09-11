@@ -55,6 +55,11 @@ Notes:
   (`rm -f protoc-gen-go-godash protoc-gen-dart-godash`) or use `go install`.
 - After changing a protoc plugin, run `go install ./cmd/protoc-gen-*` before
   testing generation.
+- The test plan (coverage inventory + gaps) is `TEST_PLAN.md`;
+  `.github/workflows/test.yml` runs `go vet`, `go test -race` and the Flutter
+  analyze/test suite.
+- `test/integration/native_bridge_test.dart` builds the c-shared benchmark
+  backend in `setUpAll` and skips itself if Go is unavailable.
 
 ## Repo map
 

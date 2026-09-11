@@ -143,3 +143,114 @@ func TestComputeRejectsRepeated(t *testing.T) {
 		t.Fatal("repeated int32 should be rejected")
 	}
 }
+
+// buildMsg builds a file from a raw FileDescriptorProto and returns its first
+// message descriptor.
+func buildMsg(t *testing.T, fdp *descriptorpb.FileDescriptorProto) protoreflect.MessageDescriptor {
+	t.Helper()
+	fd, err := protodesc.NewFile(fdp, nil)
+	if err != nil {
+		t.Fatalf("build descriptor: %v", err)
+	}
+	return fd.Messages().Get(0)
+}
+
+func baseFile(msg *descriptorpb.DescriptorProto) *descriptorpb.FileDescriptorProto {
+	return &descriptorpb.FileDescriptorProto{
+		Name:        proto.String("hotlayout_extra.proto"),
+		Package:     proto.String("hotlayout"),
+		Syntax:      proto.String("proto3"),
+		MessageType: []*descriptorpb.DescriptorProto{msg},
+	}
+}
+
+func TestComputeRejectsEnum(t *testing.T) {
+	fdp := baseFile(&descriptorpb.DescriptorProto{
+		Name: proto.String("M"),
+		Field: []*descriptorpb.FieldDescriptorProto{{
+			Name:     proto.String("e"),
+			Number:   proto.Int32(1),
+			Label:    descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(),
+			Type:     descriptorpb.FieldDescriptorProto_TYPE_ENUM.Enum(),
+			TypeName: proto.String(".hotlayout.E"),
+		}},
+	})
+	fdp.EnumType = []*descriptorpb.EnumDescriptorProto{{
+		Name: proto.String("E"),
+		Value: []*descriptorpb.EnumValueDescriptorProto{
+			{Name: proto.String("E_ZERO"), Number: proto.Int32(0)},
+		},
+	}}
+	if _, err := Compute(buildMsg(t, fdp)); err == nil {
+		t.Fatal("enum field should be rejected")
+	}
+}
+
+func TestComputeRejectsOneof(t *testing.T) {
+	m := buildMsg(t, baseFile(&descriptorpb.DescriptorProto{
+		Name:      proto.String("M"),
+		OneofDecl: []*descriptorpb.OneofDescriptorProto{{Name: proto.String("choice")}},
+		Field: []*descriptorpb.FieldDescriptorProto{{
+			Name:       proto.String("a"),
+			Number:     proto.Int32(1),
+			Label:      descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(),
+			Type:       descriptorpb.FieldDescriptorProto_TYPE_INT32.Enum(),
+			OneofIndex: proto.Int32(0),
+		}},
+	}))
+	if _, err := Compute(m); err == nil {
+		t.Fatal("oneof field should be rejected")
+	}
+}
+
+func TestComputeRejectsProto3Optional(t *testing.T) {
+	m := buildMsg(t, baseFile(&descriptorpb.DescriptorProto{
+		Name:      proto.String("M"),
+		OneofDecl: []*descriptorpb.OneofDescriptorProto{{Name: proto.String("_b")}},
+		Field: []*descriptorpb.FieldDescriptorProto{{
+			Name:           proto.String("b"),
+			Number:         proto.Int32(1),
+			Label:          descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(),
+			Type:           descriptorpb.FieldDescriptorProto_TYPE_INT32.Enum(),
+			OneofIndex:     proto.Int32(0),
+			Proto3Optional: proto.Bool(true),
+		}},
+	}))
+	if _, err := Compute(m); err == nil {
+		t.Fatal("proto3 optional field should be rejected")
+	}
+}
+
+func TestComputeRejectsMap(t *testing.T) {
+	m := buildMsg(t, baseFile(&descriptorpb.DescriptorProto{
+		Name: proto.String("M"),
+		NestedType: []*descriptorpb.DescriptorProto{{
+			Name:    proto.String("LabelsEntry"),
+			Options: &descriptorpb.MessageOptions{MapEntry: proto.Bool(true)},
+			Field: []*descriptorpb.FieldDescriptorProto{
+				{
+					Name:   proto.String("key"),
+					Number: proto.Int32(1),
+					Label:  descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(),
+					Type:   descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum(),
+				},
+				{
+					Name:   proto.String("value"),
+					Number: proto.Int32(2),
+					Label:  descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(),
+					Type:   descriptorpb.FieldDescriptorProto_TYPE_INT32.Enum(),
+				},
+			},
+		}},
+		Field: []*descriptorpb.FieldDescriptorProto{{
+			Name:     proto.String("labels"),
+			Number:   proto.Int32(1),
+			Label:    descriptorpb.FieldDescriptorProto_LABEL_REPEATED.Enum(),
+			Type:     descriptorpb.FieldDescriptorProto_TYPE_MESSAGE.Enum(),
+			TypeName: proto.String(".hotlayout.M.LabelsEntry"),
+		}},
+	}))
+	if _, err := Compute(m); err == nil {
+		t.Fatal("map field should be rejected")
+	}
+}

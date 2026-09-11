@@ -1,0 +1,65 @@
+name: Tests
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    name: Go (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26"
+          cache-dependency-path: go.sum
+      - name: Vet
+        run: go vet ./...
+      - name: Test (race)
+        run: go test -race ./...
+
+  web:
+    name: Web worker (wasm + Chrome)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26"
+          cache-dependency-path: go.sum
+      - name: Install wasmbrowsertest harness
+        run: |
+          cd cmd/go_js_wasm_exec
+          go build -o /tmp/go_js_wasm_exec .
+      - name: Web worker protocol tests
+        run: GOOS=js GOARCH=wasm go test -exec /tmp/go_js_wasm_exec ./web
+
+  dart:
+    name: Dart (flutter analyze + test)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26"
+          cache-dependency-path: go.sum
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Pub get
+        run: flutter pub get
+      - name: Analyze
+        run: flutter analyze lib test benchmark
+      - name: Test
+        run: flutter test

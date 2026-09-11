@@ -1,0 +1,131 @@
+package main
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func TestToSlug(t *testing.T) {
+	cases := map[string]string{
+		"My App":        "myapp",
+		"Hello World 1": "helloworld1",
+		"already_slug":  "alreadyslug",
+		"UPPER-case!":   "uppercase",
+		"":              "",
+	}
+	for in, want := range cases {
+		if got := toSlug(in); got != want {
+			t.Errorf("toSlug(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestIsLocalPath(t *testing.T) {
+	cases := map[string]bool{
+		"/abs/path":              true,
+		"../godash":              true,
+		"owner/repo":             true,
+		".":                      true,
+		"..":                     true,
+		"https://github.com/x/y": false,
+		"justaname":              false,
+	}
+	for in, want := range cases {
+		if got := isLocalPath(in); got != want {
+			t.Errorf("isLocalPath(%q) = %v, want %v", in, got, want)
+		}
+	}
+}
+
+func TestReplaceInFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "f.txt")
+	if err := os.WriteFile(path, []byte("name: TODO\nid: TODO\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := replaceInFile(path, "TODO", "myapp"); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(path)
+	if string(b) != "name: myapp\nid: myapp\n" {
+		t.Fatalf("unexpected content: %q", b)
+	}
+}
+
+func TestDetectGodashDep(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, content string) string {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+
+	inline := write("inline.yaml", "dependencies:\n  godash: ^1.2.3\n  fixnum: ^1.1.1\n")
+	typ, val, err := detectGodashDep(inline)
+	if err != nil || typ != "version" || val != "^1.2.3" {
+		t.Fatalf("inline: got (%q,%q,%v)", typ, val, err)
+	}
+
+	block := write("block.yaml", "dependencies:\n  godash:\n    path: ../godash\n  native_internal:\n    path: ../godash/packages/native_internal\n")
+	typ, val, err = detectGodashDep(block)
+	if err != nil || typ != "path" || val != "../godash" {
+		t.Fatalf("block: got (%q,%q,%v)", typ, val, err)
+	}
+
+	missing := write("missing.yaml", "dependencies:\n  fixnum: ^1.1.1\n")
+	if _, _, err := detectGodashDep(missing); err == nil {
+		t.Fatal("expected an error when godash is absent")
+	}
+}
+
+func TestResolveGodashPath(t *testing.T) {
+	if got := resolveGodashPath("/proj", "../godash"); got != "/godash" {
+		t.Errorf("relative = %q, want /godash", got)
+	}
+	if got := resolveGodashPath("/proj", "/abs/godash"); got != "/abs/godash" {
+		t.Errorf("absolute = %q, want /abs/godash", got)
+	}
+}
+
+func TestToolDetect(t *testing.T) {
+	// `go` is necessarily present (we are running go test).
+	if !(tool{name: "go", check: []string{"version"}}).detect() {
+		t.Error("expected the go toolchain to be detected")
+	}
+	if (tool{name: "godash-no-such-binary-xyz", check: []string{"--version"}}).detect() {
+		t.Error("a nonexistent binary must not be detected")
+	}
+	// checkChrome must not panic regardless of the host.
+	_ = checkChrome()
+}
+
+func TestTemplateMetaRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	in := &templateMeta{Remote: "https://example.com/tpl", Version: "v1.2.0", Commit: "abc123"}
+	if err := writeTemplateMeta(dir, in); err != nil {
+		t.Fatal(err)
+	}
+	out, err := readTemplateMeta(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if *out != *in {
+		t.Fatalf("round trip mismatch: %+v != %+v", out, in)
+	}
+
+	// Empty fields are omitted.
+	partial := t.TempDir()
+	if err := writeTemplateMeta(partial, &templateMeta{Version: "main"}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := readTemplateMeta(partial)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Version != "main" || got.Remote != "" || got.Commit != "" {
+		t.Fatalf("unexpected partial meta: %+v", got)
+	}
+}

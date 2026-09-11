@@ -377,6 +377,30 @@ func TestCallSyncBadPayload(t *testing.T) {
 	}
 }
 
+func TestCallSyncHonoursContextTimeout(t *testing.T) {
+	r := resetForTest(t)
+	SetHandleRPC(func(ctx context.Context, req *pb.RpcRequest, ch chan<- *pb.Response) {
+		// Wait for cancellation rather than producing a response.
+		<-ctx.Done()
+	})
+	req := &pb.Request{
+		Requests: &pb.Request_RpcRequest{RpcRequest: &pb.RpcRequest{Path: "/slow"}},
+	}
+	payload, _ := req.MarshalVT()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	_, err := r.CallSync(ctx, payload)
+	elapsed := time.Since(start)
+	if err == nil {
+		t.Fatal("expected an error when the handler yields no response")
+	}
+	if elapsed > testTimeout {
+		t.Fatalf("CallSync did not return promptly after ctx timeout: %v", elapsed)
+	}
+}
+
 func TestCallRPCStreamOrdering(t *testing.T) {
 	resetForTest(t)
 	const n = 5

@@ -3,6 +3,7 @@ package rpc
 import (
 	"context"
 	"encoding/binary"
+	"sync"
 	"testing"
 	"time"
 
@@ -177,5 +178,69 @@ func TestCallFlowCreditUnknownPortIsNoop(t *testing.T) {
 	// request), so the control call itself still produces no responses.
 	if resps := recvAll(t, ctrl); len(resps) != 0 {
 		t.Fatalf("unknown-port credit should produce no responses, got %d", len(resps))
+	}
+}
+
+// TestFlowGateConcurrentAcquire verifies that many goroutines can wait on the
+// same gate and are all served as credits arrive.
+func TestFlowGateConcurrentAcquire(t *testing.T) {
+	g := newFlowGate()
+	g.AddCredits(1) // bounded(1)
+
+	const n = 16
+	var wg sync.WaitGroup
+	errs := make(chan error, n)
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := g.Acquire(context.Background()); err != nil {
+				errs <- err
+			}
+		}()
+	}
+
+	g.AddCredits(n - 1)
+
+	done := make(chan struct{})
+	go func() { wg.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(testTimeout):
+		t.Fatal("concurrent Acquire calls did not all complete")
+	}
+	close(errs)
+	for err := range errs {
+		t.Errorf("Acquire: %v", err)
+	}
+}
+
+// TestFlowGateConcurrentAcquireCtxCancel ensures a cancelled waiter does not
+// consume a later credit or leak into the waiter list.
+func TestFlowGateConcurrentAcquireCtxCancel(t *testing.T) {
+	g := &FlowGate{bounded: true}
+	cancelled, cancel := context.WithCancel(context.Background())
+	errCh := make(chan error, 1)
+	go func() { errCh <- g.Acquire(cancelled) }()
+	cancel()
+	if err := <-errCh; err != context.Canceled {
+		t.Fatalf("got %v, want context.Canceled", err)
+	}
+	// A later credit must still be consumable.
+	g.AddCredits(1)
+	if err := g.Acquire(context.Background()); err != nil {
+		t.Fatalf("Acquire after cancelled waiter: %v", err)
+	}
+}
+
+// TestReceiveFlowCreditMalformedPayloadIsIgnored verifies short/zero/negative
+// grants are dropped without panicking or polluting the pending buffer.
+func TestReceiveFlowCreditMalformedPayloadIsIgnored(t *testing.T) {
+	r := resetForTest(t)
+	r.receiveFlowCredit([]byte{1, 2, 3})
+	r.receiveFlowCredit(creditPayload(1, 0))
+	r.receiveFlowCredit(creditPayload(2, -5))
+	if len(r.pendingFlowCredits) != 0 {
+		t.Fatalf("malformed credits should not be buffered: %+v", r.pendingFlowCredits)
 	}
 }
