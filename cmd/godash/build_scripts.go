@@ -160,51 +160,6 @@ func buildScriptWebRun(e *projectEnv) string {
 		`flutter run -d web-server`
 }
 
-// buildScriptApk returns the shell for `godash android apk`.
-func buildScriptApk(e *projectEnv) string {
-	return protoGoScript() + "\n" +
-		buildScriptAndroidLibArm64(e) + "\n" +
-		buildScriptAndroidLibX86_64(e) + "\n" +
-		ffiScript() + "\n" +
-		applyGoLicensesScript() + "\n" +
-		`flutter build apk --release --dart-define-from-file=core.env`
-}
-
-// buildScriptAppBundle returns the shell for `godash android appbundle`.
-func buildScriptAppBundle(e *projectEnv) string {
-	return protoGoScript() + "\n" +
-		buildScriptAndroidLibArm64(e) + "\n" +
-		buildScriptAndroidLibX86_64(e) + "\n" +
-		ffiScript() + "\n" +
-		`flutter build appbundle --release --dart-define-from-file=core.env`
-}
-
-// buildScriptIOS returns the shell for `godash ios`.
-func buildScriptIOS(e *projectEnv) string {
-	return protoGoScript() + "\n" +
-		buildScriptIOSLib(e) + "\n" +
-		ffiScript() + "\n" +
-		applyGoLicensesScript() + "\n" +
-		`flutter build ios --release --dart-define-from-file=core.env`
-}
-
-// buildScriptMacosBuild returns the shell for `godash macos build`.
-func buildScriptMacosBuild(e *projectEnv) string {
-	return protoGoScript() + "\n" +
-		buildScriptMacosLib(e) + "\n" +
-		ffiScript() + "\n" +
-		applyGoLicensesScript() + "\n" +
-		`flutter build macos --debug --dart-define-from-file=core.env`
-}
-
-// buildScriptMacosRun returns the shell for `godash macos run`.
-func buildScriptMacosRun(e *projectEnv) string {
-	return protoGoScript() + "\n" +
-		buildScriptMacosLib(e) + "\n" +
-		ffiScript() + "\n" +
-		`flutter run -d macos --dart-define-from-file=core.env`
-}
-
 // buildScriptAndroidLibArm64 builds arm64-v8a shared lib.
 func buildScriptAndroidLibArm64(e *projectEnv) string {
 	ndkToolchain := e.NDKPath + "/toolchains/llvm/prebuilt/darwin-x86_64/bin"
@@ -216,8 +171,7 @@ go build -C go -ldflags="-w -s -extldflags=-Wl,-soname=%s" -buildmode=c-shared -
 -o build/android-arm64-v8a/%s.so .
 mkdir -p %s/arm64-v8a
 cp go/build/android-arm64-v8a/%s.so %s/arm64-v8a/
-cp go/build/android-arm64-v8a/%s.h exported.h
-`, ndkToolchain, e.LibName, e.LibName, e.AndroidPluginDir, e.LibName, e.AndroidPluginDir, e.LibName)
+`, ndkToolchain, e.LibName, e.LibName, e.AndroidPluginDir, e.LibName, e.AndroidPluginDir)
 }
 
 // buildScriptAndroidLibX86_64 builds x86_64 shared lib.
@@ -230,8 +184,7 @@ go build -C go -ldflags="-w -s -extldflags=-Wl,-soname=%s" -buildmode=c-shared -
 -o build/android-x86_64/%s.so .
 mkdir -p %s/x86_64
 cp go/build/android-x86_64/%s.so %s/x86_64/
-cp go/build/android-x86_64/%s.h exported.h
-`, ndkToolchain, e.LibName, e.LibName, e.AndroidPluginDir, e.LibName, e.AndroidPluginDir, e.LibName)
+`, ndkToolchain, e.LibName, e.LibName, e.AndroidPluginDir, e.LibName, e.AndroidPluginDir)
 }
 
 // buildScriptIOSLib builds iOS .a and xcframework.
@@ -243,13 +196,12 @@ SDK=iphoneos PLATFORM=ios CC="$PWD/clangwrap.sh" \
 go build -C go -buildmode=c-archive -trimpath -tags='ios' \
 -o build/ios-arm64/%s.a .
 cp go/build/ios-arm64/%s.h %s/Headers/
-cp go/build/ios-arm64/%s.h exported.h
 rm -rf %s
 xcodebuild -create-xcframework \
   -library go/build/ios-arm64/%s.a -headers %s/Headers \
   -output %s
 `, e.IOSPluginDir, e.IOSFrameworkDir, e.IOSDeployment,
-		e.LibName, e.LibName, e.IOSPluginDir, e.LibName,
+		e.LibName, e.LibName, e.IOSPluginDir,
 		e.IOSFrameworkDir, e.LibName, e.IOSPluginDir, e.IOSFrameworkDir)
 }
 
@@ -265,14 +217,13 @@ CGO_LDFLAGS="-isysroot %s -mmacosx-version-min=%s" \
 go build -C go -ldflags='-w -s' -buildmode=c-archive -trimpath -tags debug \
 -o build/macos-arm64/%s.a .
 cp go/build/macos-arm64/%s.h %s/Headers/
-cp go/build/macos-arm64/%s.h exported.h
 rm -rf %s
 xcodebuild -create-xcframework \
   -library go/build/macos-arm64/%s.a -headers %s/Headers \
   -output %s
 `, e.MacosPluginDir, e.MacosFrameworkDir, e.MacosSDK, macosCC,
 		macosSDKPath, e.MacosDeployment, macosSDKPath, e.MacosDeployment,
-		e.LibName, e.LibName, e.MacosPluginDir, e.LibName,
+		e.LibName, e.LibName, e.MacosPluginDir,
 		e.MacosFrameworkDir, e.LibName, e.MacosPluginDir, e.MacosFrameworkDir)
 }
 
@@ -335,11 +286,6 @@ cp web/sqlite3-opfs-async-proxy.js %s/cmd/go_js_wasm_exec/
 cp web/scroll_worker.js %s/cmd/go_js_wasm_exec/
 go install -C %s/cmd/go_js_wasm_exec
 `, e.GodashPath, e.GodashPath, e.GodashPath, e.GodashPath, e.GodashPath)
-}
-
-// ffiScript runs ffigen to generate the Dart native bridge.
-func ffiScript() string {
-	return `dart run ffigen --config ffigen_config.yaml --verbose severe && flutter pub get`
 }
 
 // dartAPIScript clones the Dart SDK and copies the C API headers into go/dart_api.
@@ -447,7 +393,6 @@ rm -rf %s
 rm -rf %s
 rm -f %s/x86_64/%s.so
 rm -f %s/arm64-v8a/%s.so
-rm -f exported.h
 rm -f lib/version/version.dart
 flutter clean
 `, e.GodashPath, e.GodashPath, e.GodashPath, e.GodashPath,

@@ -23,7 +23,7 @@ import 'package:ffi/ffi.dart';
 
 import 'package:godash/pb/core.pb.dart';
 
-import 'native_library.g.dart';
+import 'native_library.dart';
 
 /// Allocates a [BytesContainer] on the C heap holding a copy of [bytes].
 /// Dart owns this container and frees it via [freeBytesContainerPointer].

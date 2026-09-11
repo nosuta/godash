@@ -265,7 +265,7 @@ func copyDir(src, dst string) error {
 // project. It runs the proto bootstrap + generation, then writes the
 // godash-owned Go wiring files (main*.go, rpc_handler.go, entrypoint.go),
 // then runs the remaining prepare shell (flutter create for missing
-// platforms, ffigen, licenses).
+// platforms, licenses).
 //
 // Web assets are NOT extracted here because the app title (used in
 // index.html) is set later by applyConfig. The caller (runScaffold) is

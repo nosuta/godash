@@ -76,7 +76,7 @@ func runUpgrade(args []string) {
 		os.Exit(1)
 	}
 
-	// Regenerate all godash-owned files (proto, wiring, web assets, ffigen,
+	// Regenerate all godash-owned files (proto, wiring, web assets,
 	// licenses) so they match the new godash.
 	fmt.Println()
 	fmt.Println("Regenerating derived files ...")
@@ -114,7 +114,7 @@ func runUpgrade(args []string) {
 }
 
 // runPrepareRefresh re-runs the prepare step (proto, flutter create for
-// missing platforms, ffigen, go-licenses) in cwd. It is a focused
+// missing platforms, go-licenses) in cwd. It is a focused
 // subset of runPrepare used by godash upgrade.
 func runPrepareRefresh(cwd string) error {
 	licensesLine, cleanupLicenses := licensesTplExport()
@@ -124,7 +124,7 @@ func runPrepareRefresh(cwd string) error {
 		return err
 	}
 	rest := licensesLine + applyGoLicensesScript() + "\n" + flutterCreateBlocks(true)
-	return runShellTask("Prepare environment (flutter create, ffigen, licenses)", cwd, rest)
+	return runShellTask("Prepare environment (flutter create, licenses)", cwd, rest)
 }
 
 // godashInlineRe matches `  godash: <value>` (inline version constraint).

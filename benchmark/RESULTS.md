@@ -117,6 +117,36 @@ Notes:
 
 Reproduce: `dart run benchmark/native/bench.dart --n 5000 --payload 64 --sync`.
 
+## P3 — Typed hot-path C exports (packed struct)
+
+Measured after P3 (2026-08-29): a method marked `option (godash.hot) = true;`
+with fixed-layout scalar messages bypasses protobuf, the envelope, the
+goroutine/port machinery and `FreeBytesContainer` entirely. The Dart wrapper
+packs the fields into a `calloc`'d buffer, calls the `//export <Service>_<Method>`
+symbol through `DynamicLibrary.lookupFunction`, and unpacks the response.
+
+Benchmark: `--hot` mode (`BenchHotAdd`, packed int64 in/out, 20000 iters).
+
+| mode | min | p50 | p90 | p99 | mean |
+|---|---|---|---|---|---|
+| hot (packed int64) | 0 µs | 0 µs | 1 µs | 1 µs | ~0.5 µs |
+| sync (envelope, 64 B) | 10 µs | 18 µs | 25 µs | 95 µs | ~22 µs |
+| async (envelope, 64 B) | 27 µs | 48 µs | 74 µs | 200 µs | ~57 µs |
+
+Notes:
+
+- The <2 µs acceptance target is met with a wide margin (mean ~0.5 µs, p99 1 µs).
+  The measurement includes the Dart `ByteData` pack/unpack, two `malloc`/`calloc`
+  calls, the cached symbol lookup and the FFI round trip.
+- `p50 0 µs` means below `Stopwatch`'s reported microsecond resolution for many
+  iterations; the mean is the reliable figure here.
+- Hot methods are native-only by construction: web uses the identical generated
+  API but `Transport.supportsHotPath == false`, so it serializes to the protobuf
+  envelope. Ineligible (`hot`-marked but string/nested/repeated) methods also stay
+  on the envelope.
+
+Reproduce: `dart run benchmark/native/bench.dart --n 20000 --hot`.
+
 ## Notes
 
 - The measured path includes protobuf `Request.writeToBuffer()` /

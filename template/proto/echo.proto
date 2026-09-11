@@ -4,11 +4,29 @@ package pb;
 
 option go_package = "flap/pb";
 
+import "godash/options.proto";
+
 message EchoRequest { string message = 1; }
 
 message EchoResponse { string message = 1; }
 
+message AddRequest {
+  int32 a = 1;
+  int32 b = 2;
+}
+
+message AddResponse { int32 sum = 1; }
+
 service EchoService {
   rpc Echo(EchoRequest) returns (EchoResponse);
   rpc ServerStream(EchoRequest) returns (stream EchoResponse);
+}
+
+// CalcService demonstrates the packed-struct hot path (PLAN.md P3). Add only
+// has fixed-layout scalar fields, so on native it bypasses protobuf and the
+// async envelope entirely; on web it transparently falls back to the envelope.
+service CalcService {
+  rpc Add(AddRequest) returns (AddResponse) {
+    option (godash.hot) = true;
+  }
 }

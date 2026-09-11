@@ -15,7 +15,7 @@ import 'package:fixnum/fixnum.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:godash/bridge/native_bytes.dart';
 import 'package:godash/pb/core.pb.dart';
-import 'package:godash/bridge/native_library.g.dart';
+import 'package:godash/bridge/native_library.dart';
 
 /// Allocates a BytesContainer via the helper under test (same shape the Go
 /// side receives) and returns it plus its message bytes.

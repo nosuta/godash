@@ -114,3 +114,13 @@ func CallSync(payload *C.BytesContainer) *C.BytesContainer {
 	}
 	return (*C.BytesContainer)(dart_api.BytesToContainer(rb))
 }
+
+// BenchHotAdd is a packed-struct hot-path export mirroring the shape generated
+// by protoc-gen-go-godash for a `(godash.hot)` method: an int64 request field
+// and an int64 response field, no protobuf, no envelope, no port.
+//
+//export BenchHotAdd
+func BenchHotAdd(req unsafe.Pointer, resp unsafe.Pointer) C.int32_t {
+	*(*int64)(resp) = *(*int64)(req) + 1
+	return 0
+}

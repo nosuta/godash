@@ -104,17 +104,34 @@ Acceptance: unary EchoService round-trip measurably faster; streaming paths unch
 For methods whose payloads are scalars / fixed-layout data, bypass protobuf entirely:
 per-method C exports taking a packed C struct, exactly like nitro's `@HybridStruct` bridge.
 
-- [ ] Define a proto option (e.g. `option (godash.hot) = true;`) or a Dart-side spec
+- [x] Define a proto option (e.g. `option (godash.hot) = true;`) or a Dart-side spec
       annotation marking hot-path methods eligible for packed-struct bridging.
-- [ ] `cmd/protoc-gen-go-godash`: emit `//export <Service>_<Method>` taking/returning a
+      → `proto/godash/options.proto` defines `(godash.hot)` on MethodOptions;
+      generated Go extension in `pb/options.pb.go`
+- [x] `cmd/protoc-gen-go-godash`: emit `//export <Service>_<Method>` taking/returning a
       packed C struct (mirroring nitro's `NitroOpt*` / packed-struct conventions).
-- [ ] `cmd/protoc-gen-dart-godash`: emit typed Dart wrappers calling those exports.
-- [ ] Regenerate `lib/bridge/native_library.g.dart` via ffigen (`godash prepare`).
-- [ ] **Web fallback**: the generated Dart API is identical; on web the typed wrappers
+      → emits `<file>.hot.go` (`//go:build !js`) with `GodashHot_<Service>_<Method>`
+      unpack/pack functions; `cmd/godash` emits the actual `//export <Service>_<Method>`
+      wrappers into package `main` so cgo never enters the web-safe `pb` package.
+      ABI note: the packed layout is passed as `void*` buffers (not a C struct value),
+      which is portable across ABIs and avoids per-method ffigen declarations.
+- [x] `cmd/protoc-gen-dart-godash`: emit typed Dart wrappers calling those exports.
+      → typed methods pack/unpack via `ByteData` and call `Transport.hotRaw`
+- [x] Regenerate `lib/bridge/native_library.g.dart` via ffigen (`godash prepare`).
+      → ffigen removed entirely (follow-up): `native_library.g.dart` was replaced by a
+      hand-written `lib/bridge/native_library.dart` that resolves the four stable
+      transport symbols (`InitializeDartAPI`/`RPC`/`CallSync`/`FreeBytesContainer`)
+      with `DynamicLibrary.lookupFunction`; generated hot exports were already dynamic.
+      `ffigen_config.yaml`, the `godash ffi` command, the `ffigen` dev dependency and
+      the `exported.h` build artifact are gone — godash projects never run ffigen.
+- [x] **Web fallback**: the generated Dart API is identical; on web the typed wrappers
       serialize to the existing postMessage envelope (`Transport` abstraction already
       isolates this). No worker changes required.
-- [ ] Fall back to the envelope path for anything that doesn't fit the packed layout
+      → `Transport.supportsHotPath` is false on web, so the wrapper calls `unary(...)`
+- [x] Fall back to the envelope path for anything that doesn't fit the packed layout
       (strings, nested records) — mixed-mode is fine.
+      → eligibility computed by `internal/hotlayout`; a `hot` method with strings
+      silently keeps the envelope path (verified by generator run)
 
 Acceptance: a hot-path method measured at <2 µs native round-trip; same call works on web
 via the envelope; envelope path still available for everything else.
@@ -164,7 +181,7 @@ isolation headers. Opt-in only; skip until P5 is stable.
 |---|---|
 | Ownership bugs (use-after-free, leaks) under cancel/timeout | P0 tests incl. cancel/timeout paths; P4 frees tied to existing timeout logic |
 | Sync path (P2) blocks platform thread on slow handlers | Document contract; keep async path for streams/long work |
-| P3 codegen complexity (two protoc plugins + ffigen) | Mixed-mode fallback; ship per-service incrementally |
+| P3 codegen complexity (two protoc plugins) | Mixed-mode fallback; ship per-service incrementally |
 | TinyGo wasm constraints | Typed exports are native-only; web always uses the envelope (no new wasm ABI surface) |
 | GC retention gotcha on web transfers (documented in `bridge_web.dart:91-111`) | Keep the defensive copy on request side until proven unnecessary |
 
@@ -175,7 +192,7 @@ isolation headers. Opt-in only; skip until P5 is stable.
 | P0 Test foundation | done (tests + baseline in `benchmark/RESULTS.md`) |
 | P1 Response zero-copy + allocator contract | done (zero-copy parse + `FreeBytesContainer` contract; delta in `benchmark/RESULTS.md`) |
 | P2 Sync FFI unary path | done (`CallSync` + `rpcSync`; unary p50 40 → 14 µs) |
-| P3 Typed hot-path C exports | not started |
+| P3 Typed hot-path C exports | done (`godash.hot` + packed `void*` ABI; hot mean ~0.5 µs) |
 | P4 Request ownership transfer | not started |
 | P5 Stream backpressure | not started |
 | P6 SharedArrayBuffer (opt-in) | deferred |

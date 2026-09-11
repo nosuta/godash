@@ -5,6 +5,11 @@ import (
 	"strings"
 
 	"google.golang.org/protobuf/compiler/protogen"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
+
+	"github.com/nosuta/godash/internal/hotlayout"
+	godashpb "github.com/nosuta/godash/pb"
 )
 
 func main() {
@@ -49,8 +54,21 @@ func generateFile(gen *protogen.Plugin, file *protogen.File) {
 	g.P("// source: ", file.Desc.Path())
 	g.P()
 
+	hasHot := false
+	for _, svc := range normalServices {
+		if len(hotMethodsFor(svc)) > 0 {
+			hasHot = true
+			break
+		}
+	}
+
 	if hasPush || len(reverseServices) > 0 {
 		g.P("import 'dart:async';")
+	}
+	if hasHot {
+		g.P("import 'dart:typed_data';")
+	}
+	if hasPush || len(reverseServices) > 0 || hasHot {
 		g.P()
 	}
 	needsBridge := len(reverseServices) > 0 || hasPush
@@ -70,6 +88,12 @@ func generateFile(gen *protogen.Plugin, file *protogen.File) {
 	importCount := file.Desc.Imports().Len()
 	for i := 0; i < importCount; i++ {
 		dep := file.Desc.Imports().Get(i)
+		// The godash option definitions are only used at code-generation time
+		// and are not generated as Dart; importing them would reference a
+		// missing options.pb.dart.
+		if strings.HasPrefix(dep.Path(), "godash/") {
+			continue
+		}
 		depPath := strings.TrimSuffix(dep.Path(), ".proto")
 		idx = strings.LastIndex(depPath, "/")
 		if idx != -1 {
@@ -271,6 +295,11 @@ func generateNormalServiceClient(g *protogen.GeneratedFile, service *protogen.Se
 	baseName := strings.TrimSuffix(service.GoName, "Service")
 	clientName := baseName + "RpcClient"
 
+	hot := map[protoreflect.Name]hotMethod{}
+	for _, hm := range hotMethodsFor(service) {
+		hot[hm.method.Desc.Name()] = hm
+	}
+
 	g.P("class ", clientName, " {")
 	g.P("  final Transport _transport;")
 	g.P()
@@ -286,6 +315,11 @@ func generateNormalServiceClient(g *protogen.GeneratedFile, service *protogen.Se
 		resName := method.Output.GoIdent.GoName
 		methodName := toCamelCase(method.GoName)
 		fullPath := fmt.Sprintf("/%s/%s", service.Desc.FullName(), method.Desc.Name())
+
+		if hm, ok := hot[method.Desc.Name()]; ok {
+			emitHotClientMethod(g, service, hm, clientName, reqName, resName, methodName, fullPath)
+			continue
+		}
 
 		if method.Desc.IsStreamingServer() {
 			g.P("  Stream<", resName, "> ", methodName, "(", reqName, " request) async* {")
@@ -308,6 +342,149 @@ func generateNormalServiceClient(g *protogen.GeneratedFile, service *protogen.Se
 		}
 	}
 	g.P("}")
+}
+
+// hotMethod is a unary method whose messages are packable and that carries the
+// (godash.hot) option.
+type hotMethod struct {
+	method *protogen.Method
+	req    hotlayout.Layout
+	resp   hotlayout.Layout
+}
+
+// isHot reports whether the method carries the `(godash.hot) = true` option.
+func isHot(m *protogen.Method) bool {
+	opts := m.Desc.Options()
+	if opts == nil {
+		return false
+	}
+	v, _ := proto.GetExtension(opts, godashpb.E_Hot).(bool)
+	return v
+}
+
+// hotMethodsFor returns the packable hot methods of a service. Streaming or
+// non-packable methods are omitted and keep the envelope path.
+func hotMethodsFor(service *protogen.Service) []hotMethod {
+	var out []hotMethod
+	for _, m := range service.Methods {
+		if m.Desc.IsStreamingClient() || m.Desc.IsStreamingServer() {
+			continue
+		}
+		if !isHot(m) {
+			continue
+		}
+		req, err := hotlayout.Compute(m.Input.Desc)
+		if err != nil {
+			continue
+		}
+		resp, err := hotlayout.Compute(m.Output.Desc)
+		if err != nil {
+			continue
+		}
+		out = append(out, hotMethod{method: m, req: req, resp: resp})
+	}
+	return out
+}
+
+// emitHotClientMethod writes a typed client method that uses the packed FFI
+// fast path on native and falls back to the protobuf envelope on web.
+func emitHotClientMethod(
+	g *protogen.GeneratedFile,
+	service *protogen.Service,
+	hm hotMethod,
+	clientName, reqName, resName, methodName, fullPath string,
+) {
+	symbol := service.GoName + "_" + hm.method.GoName
+	privateName := "_" + methodName + "Hot"
+
+	g.P("  /// Hot path: packed-struct FFI on native, protobuf envelope on web.")
+	g.P("  Future<", resName, "> ", methodName, "(", reqName, " request) {")
+	g.P("    if (!_transport.supportsHotPath) {")
+	g.P("      return _transport.unary(")
+	g.P("        '", fullPath, "',")
+	g.P("        request,")
+	g.P("        () => ", resName, "(),")
+	g.P("      );")
+	g.P("    }")
+	g.P("    return Future.sync(() => ", privateName, "(request));")
+	g.P("  }")
+	g.P()
+	g.P("  ", resName, " ", privateName, "(", reqName, " request) {")
+	g.P("    final reqBytes = Uint8List(", hm.req.Size, ");")
+	if len(hm.req.Fields) > 0 {
+		g.P("    final reqView = ByteData.sublistView(reqBytes);")
+	}
+	for _, f := range hm.req.Fields {
+		_, set, isBool := dartAccessor(f.GoType)
+		name := dartFieldName(f.Desc.Name())
+		if isBool {
+			g.P("    reqView.setUint8(", f.Offset, ", request.", name, " ? 1 : 0);")
+			continue
+		}
+		g.P("    reqView.", set, "(", f.Offset, ", request.", name, ", Endian.host);")
+	}
+	g.P("    final respBytes = _transport.hotRaw('", symbol, "', reqBytes, ", hm.resp.Size, ");")
+	if len(hm.resp.Fields) > 0 {
+		g.P("    final respView = ByteData.sublistView(respBytes);")
+	}
+	g.P("    final output = ", resName, "();")
+	for _, f := range hm.resp.Fields {
+		get, _, isBool := dartAccessor(f.GoType)
+		name := dartFieldName(f.Desc.Name())
+		if isBool {
+			g.P("    output.", name, " = respView.getUint8(", f.Offset, ") != 0;")
+			continue
+		}
+		g.P("    output.", name, " = respView.", get, "(", f.Offset, ", Endian.host);")
+	}
+	g.P("    return output;")
+	g.P("  }")
+	g.P()
+}
+
+// dartAccessor maps a packed Go scalar type to the ByteData getter/setter pair.
+func dartAccessor(goType string) (get, set string, isBool bool) {
+	switch goType {
+	case "int32":
+		return "getInt32", "setInt32", false
+	case "uint32":
+		return "getUint32", "setUint32", false
+	case "int64":
+		return "getInt64", "setInt64", false
+	case "uint64":
+		return "getUint64", "setUint64", false
+	case "float32":
+		return "getFloat32", "setFloat32", false
+	case "float64":
+		return "getFloat64", "setFloat64", false
+	case "bool":
+		return "getUint8", "setUint8", true
+	}
+	return "", "", false
+}
+
+// dartFieldName converts a proto field name (lower_snake) to the Dart getter
+// name emitted by protoc-gen-dart (lowerCamel).
+func dartFieldName(name protoreflect.Name) string {
+	parts := strings.Split(string(name), "_")
+	out := parts[0]
+	for _, p := range parts[1:] {
+		if p == "" {
+			continue
+		}
+		out += strings.ToUpper(p[:1]) + p[1:]
+	}
+	return out
+}
+
+// protogenField finds the protogen field with the given number.
+func protogenField(m *protogen.Message, num protoreflect.FieldNumber) *protogen.Field {
+	for _, f := range m.Fields {
+		if f.Desc.Number() == num {
+			return f
+		}
+	}
+	return nil
 }
 
 func toCamelCase(s string) string {

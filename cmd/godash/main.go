@@ -12,7 +12,6 @@ Usage:
   godash [new]                       Scaffold a new project from a template (default)
   godash prepare                     Initialize / regenerate project artifacts
   godash proto                       Regenerate Go and Dart protobuf code
-  godash ffi                         Regenerate Dart native bridge (ffigen)
   godash dart-api                    Update Dart C API headers
   godash web [build|run]             Build or run the Web target
   godash android [apk|appbundle]     Build an Android target
@@ -41,8 +40,6 @@ func main() {
 		runPrepare()
 	case "proto":
 		runProto()
-	case "ffi":
-		runFFI()
 	case "dart-api":
 		runDartAPI()
 	case "web":

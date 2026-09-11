@@ -16,6 +16,7 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:ffi' as ffi;
 import 'dart:ffi';
 import 'dart:isolate';
 import 'dart:typed_data';
@@ -23,7 +24,7 @@ import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:godash/bridge/native_bytes.dart';
-import 'package:godash/bridge/native_library.g.dart';
+import 'package:godash/bridge/native_library.dart';
 import 'package:godash/pb/core.pb.dart';
 
 const echoPath = '/bench.EchoService/Echo';
@@ -34,10 +35,12 @@ void main(List<String> args) async {
   final payloadSize = _intArg(args, 'payload', 64);
   final libPath = _strArg(args, 'lib', 'benchmark/native/libbench.dylib');
   final sync = _boolArg(args, 'sync', false);
+  final hot = _boolArg(args, 'hot', false);
 
   final payload = _makePayload(payloadSize);
 
-  final lib = NativeLibrary(DynamicLibrary.open(libPath));
+  final dyn = DynamicLibrary.open(libPath);
+  final lib = NativeLibrary(dyn);
   final ret = lib.InitializeDartAPI(NativeApi.initializeApiDLData);
   if (ret != 0) {
     throw StateError('InitializeDartAPI failed: $ret');
@@ -45,6 +48,12 @@ void main(List<String> args) async {
   // Free Go-allocated response containers through the Go-exported symbol,
   // exactly like lib/bridge/bridge_native.dart does.
   configureResponseContainerFree(lib.FreeBytesContainer);
+
+  if (hot) {
+    final fn = dyn.lookupFunction<_HotNative, _HotDart>('BenchHotAdd');
+    await _runHot(n, warmup, fn);
+    return;
+  }
 
   // Warmup (JIT + allocator paths).
   for (var i = 0; i < warmup; i++) {
@@ -102,6 +111,82 @@ void main(List<String> args) async {
 // envelope path for one echo round trip.
 FutureOr<Uint8List> _trip(bool sync, NativeLibrary lib, Uint8List payload) {
   return sync ? _roundTripSync(lib, payload) : _roundTrip(lib, payload);
+}
+
+// ffi.Int32 is used (not the bare Int32) because package:fixnum also exports
+// an Int32 class, which otherwise shadows dart:ffi's native type.
+typedef _HotNative =
+    ffi.Int32 Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Void>);
+typedef _HotDart =
+    int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Void>);
+
+// _runHot measures the packed-struct hot path (PLAN.md P3): one int64 in, one
+// int64 out, no protobuf, no envelope, no port, no goroutine.
+Future<void> _runHot(int n, int warmup, _HotDart fn) async {
+  for (var i = 0; i < warmup; i++) {
+    _roundTripHot(fn, i);
+  }
+  final latencies = List<double>.filled(n, 0);
+  for (var i = 0; i < n; i++) {
+    final sw = Stopwatch()..start();
+    final got = _roundTripHot(fn, i);
+    sw.stop();
+    latencies[i] = sw.elapsedMicroseconds.toDouble();
+    if (got != i + 1) {
+      throw StateError('hot mismatch: got $got want ${i + 1}');
+    }
+  }
+  latencies.sort();
+  final mean = latencies.reduce((a, b) => a + b) / latencies.length;
+  final min = latencies.first;
+  final p50 = _percentile(latencies, 0.50);
+  final p90 = _percentile(latencies, 0.90);
+  final p99 = _percentile(latencies, 0.99);
+  final max = latencies.last;
+  print('');
+  print('=== Native hot-path latency (packed int64, n=$n) ===');
+  print('min  : ${min.toStringAsFixed(1)} us');
+  print('p50  : ${p50.toStringAsFixed(1)} us');
+  print('p90  : ${p90.toStringAsFixed(1)} us');
+  print('p99  : ${p99.toStringAsFixed(1)} us');
+  print('max  : ${max.toStringAsFixed(1)} us');
+  print('mean : ${mean.toStringAsFixed(1)} us');
+  print('json : ${jsonEncode(<String, Object>{
+        'transport': 'native',
+        'mode': 'hot',
+        'iterations': n,
+        'warmup': warmup,
+        'payload_bytes': 8,
+        'unit': 'us',
+        'min': min,
+        'p50': p50,
+        'p90': p90,
+        'p99': p99,
+        'max': max,
+        'mean': mean,
+      })}');
+}
+
+// _roundTripHot mirrors the generated hot wrapper: pack the request into a
+// native buffer, call the export, unpack the response.
+int _roundTripHot(_HotDart fn, int value) {
+  final reqBytes = Uint8List(8);
+  ByteData.sublistView(reqBytes).setInt64(0, value, Endian.host);
+  final reqPtr = malloc<Uint8>(8);
+  final respPtr = calloc<Uint8>(8);
+  try {
+    reqPtr.asTypedList(8).setAll(0, reqBytes);
+    final status = fn(reqPtr.cast<Void>(), respPtr.cast<Void>());
+    if (status != 0) {
+      throw StateError('hot status=$status');
+    }
+    return ByteData.sublistView(
+      Uint8List.fromList(respPtr.asTypedList(8)),
+    ).getInt64(0, Endian.host);
+  } finally {
+    malloc.free(reqPtr);
+    malloc.free(respPtr);
+  }
 }
 
 // _roundTripSync performs one unary echo call through the CallSync export:

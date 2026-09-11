@@ -1,9 +1,11 @@
 // Code as template. DO NOT EDIT.
 
 import 'dart:async';
+import 'dart:ffi' as ffi;
 import 'dart:ffi';
 import 'dart:io';
 import 'dart:isolate';
+import 'package:ffi/ffi.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:godash/pb/core.pb.dart';
 import 'package:flutter/foundation.dart';
@@ -11,7 +13,14 @@ import 'package:logging/logging.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'native_bytes.dart';
-import 'native_library.g.dart';
+import 'native_library.dart';
+
+// ffi.Int32 is used (not the bare Int32) because package:fixnum also exports
+// an Int32 class, which otherwise shadows dart:ffi's native type.
+typedef _HotNative =
+    ffi.Int32 Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Void>);
+typedef _HotDart =
+    int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Void>);
 
 /// Configuration for the native [Bridge].
 /// Must be set via [Bridge.configure] before the first [Bridge] access.
@@ -204,6 +213,41 @@ class Bridge extends ChangeNotifier {
   Future<Response> rpcUnary(Request req) async {
     await _waitReady();
     return rpcSync(req);
+  }
+
+  /// True on native: the packed-struct hot path is available (PLAN.md P3).
+  bool get supportsHotPath => true;
+
+  static final Map<String, _HotDart> _hotFns = {};
+
+  /// Invokes a packed-struct hot export [symbol] synchronously.
+  ///
+  /// [request] is a packed buffer written by the generated Dart client and
+  /// [responseSize] is the packed response size. The request/response buffers
+  /// are Dart-owned (malloc/calloc) and only borrowed by Go during the call,
+  /// so they are freed here without crossing the allocator contract.
+  ///
+  /// Blocks the platform thread; only for short-lived unary handlers.
+  Uint8List hotRaw(String symbol, Uint8List request, int responseSize) {
+    final fn = _hotFns.putIfAbsent(
+      symbol,
+      () => _lib.handle.lookupFunction<_HotNative, _HotDart>(symbol),
+    );
+    final reqPtr = malloc<Uint8>(request.isEmpty ? 1 : request.length);
+    final respPtr = calloc<Uint8>(responseSize <= 0 ? 1 : responseSize);
+    try {
+      if (request.isNotEmpty) {
+        reqPtr.asTypedList(request.length).setAll(0, request);
+      }
+      final status = fn(reqPtr.cast<Void>(), respPtr.cast<Void>());
+      if (status != 0) {
+        throw Exception('hot RPC $symbol failed (status=$status)');
+      }
+      return Uint8List.fromList(respPtr.asTypedList(responseSize));
+    } finally {
+      malloc.free(reqPtr);
+      malloc.free(respPtr);
+    }
   }
 
   Future<Stream<Response>> rpcStream(Request req) async {

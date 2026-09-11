@@ -1,0 +1,20 @@
+// Code as template. DO NOT EDIT.
+
+syntax = "proto3";
+
+// godash options namespace. Import this file and use `option (godash.hot) = true;`
+// on a unary method whose request/response messages contain only fixed-layout
+// scalar fields to opt the method into the packed-struct hot path.
+package godash;
+
+import "google/protobuf/descriptor.proto";
+
+option go_package = "github.com/nosuta/godash/pb";
+
+extend google.protobuf.MethodOptions {
+  // hot marks a unary method as eligible for the packed-struct FFI fast path.
+  // The method falls back to the normal envelope path when the request or
+  // response message cannot be packed (strings, bytes, nested messages,
+  // repeated/map fields, explicit presence or oneofs).
+  bool hot = 50001;
+}

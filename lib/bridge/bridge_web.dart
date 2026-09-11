@@ -231,6 +231,14 @@ class Bridge extends ChangeNotifier {
   /// between native and web.
   Future<Response> rpcUnary(Request req) => rpc(req);
 
+  /// False on web: generated hot wrappers fall back to the protobuf envelope.
+  bool get supportsHotPath => false;
+
+  /// The packed-struct hot path is native-only.
+  Uint8List hotRaw(String symbol, Uint8List request, int responseSize) {
+    throw UnsupportedError('hot path is native-only ($symbol)');
+  }
+
   /// Sends a ReverseResponse back to Go for a Go->Dart->Go ReverseService call.
   /// [reversePort] must match [Push.reversePort] from the incoming push.
   Future<void> sendReverseResponse(Int64 reversePort, List<int> payload) async {

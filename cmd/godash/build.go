@@ -92,14 +92,12 @@ func runAndroid(args []string) {
 		script = envShell(env) + "\n" + licensesLine +
 			buildScriptAndroidLibArm64(env) + "\n" +
 			buildScriptAndroidLibX86_64(env) + "\n" +
-			ffiScript() + "\n" +
 			applyGoLicensesScript() + "\n" +
 			`flutter build apk --release --dart-define-from-file=core.env`
 	case "appbundle", "aab", "bundle":
 		script = envShell(env) + "\n" + licensesLine +
 			buildScriptAndroidLibArm64(env) + "\n" +
 			buildScriptAndroidLibX86_64(env) + "\n" +
-			ffiScript() + "\n" +
 			`flutter build appbundle --release --dart-define-from-file=core.env`
 	default:
 		fmt.Fprintf(os.Stderr, "godash android: unknown mode %q (expected apk or appbundle)\n", mode)
@@ -123,7 +121,6 @@ func runIOS(args []string) {
 	defer cleanupLicenses()
 	script := envShell(env) + "\n" + licensesLine +
 		buildScriptIOSLib(env) + "\n" +
-		ffiScript() + "\n" +
 		applyGoLicensesScript() + "\n" +
 		`flutter build ios --release --dart-define-from-file=core.env`
 	if err := runShellTask("Build iOS", env.Root, script); err != nil {
@@ -151,7 +148,6 @@ func runMacos(args []string) {
 		defer cleanupLicenses()
 		script = envShell(env) + "\n" + licensesLine +
 			buildScriptMacosLib(env) + "\n" +
-			ffiScript() + "\n" +
 			applyGoLicensesScript() + "\n" +
 			`flutter build macos --debug --dart-define-from-file=core.env`
 		if err := runShellTask("Build macOS", env.Root, script); err != nil {
@@ -163,7 +159,6 @@ func runMacos(args []string) {
 		}
 		script = envShell(env) + "\n" +
 			buildScriptMacosLib(env) + "\n" +
-			ffiScript() + "\n" +
 			`flutter run -d macos --dart-define-from-file=core.env`
 		if err := runShellPipe(env.Root, script); err != nil {
 			os.Exit(errExit(err))

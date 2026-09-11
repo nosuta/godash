@@ -18,7 +18,7 @@ func runPrepare() {
 		os.Exit(1)
 	}
 	rest := licensesLine + applyGoLicensesScript() + "\n" + flutterCreateBlocks(true)
-	if err := runShellTask("Prepare environment (flutter create, ffigen, licenses)", env.Root, envShell(env)+"\n"+rest); err != nil {
+	if err := runShellTask("Prepare environment (flutter create, licenses)", env.Root, envShell(env)+"\n"+rest); err != nil {
 		os.Exit(1)
 	}
 	fmt.Println()

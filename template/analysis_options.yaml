@@ -26,8 +26,3 @@ linter:
 
 # Additional information about this file can be found at
 # https://dart.dev/guides/language/analysis-options
-
-analyzer:
-  exclude:
-    - lib/bridge/native_library.g.dart
-    # - "**/*.g.dart"
