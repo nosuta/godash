@@ -88,6 +88,15 @@ func run(ctx context.Context, args []string, errOutput io.Writer, flagSet *flag.
 		)
 	}
 
+	// Unprivileged user namespaces are disabled on many CI images (Ubuntu
+	// 23.10+ with the AppArmor restriction), so Chrome's sandbox cannot start.
+	// Opt in to --no-sandbox via WASM_NO_SANDBOX=on.
+	if os.Getenv("WASM_NO_SANDBOX") == "on" {
+		opts = append(opts,
+			chromedp.NoSandbox,
+		)
+	}
+
 	// WSL needs the GPU disabled. See issue #10
 	if runtime.GOOS == "linux" && isWSL() {
 		opts = append(opts,
