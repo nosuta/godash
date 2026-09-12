@@ -1,3 +1,10 @@
+## 2.2.1
+
+* Fix native build output for path-replace projects: resolve the
+  `native_internal` plugin directory from `pubspec.yaml` so path-replace
+  projects keep building into the checkout, while version-pinned projects use
+  the project-local `.godash/native_internal`.
+
 ## 2.2.0
 
 * Publish godash to pub.dev so projects consume it as `godash: ^2.2.0` instead
