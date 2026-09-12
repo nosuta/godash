@@ -1,3 +1,13 @@
+## 2.2.10
+
+* Remove the obsolete `godash dart-api` command. The Dart C API headers are
+  vendored inside the godash module (cgo resolves them from there), so nothing
+  needs to clone the Dart SDK into the project.
+* Document the release procedure in `RELEASING.md` and add tool-neutral agent
+  skills under `.agents/skills/`.
+* README cleanups: drop `dart-api` and the unused `go/dart_api/` entry, and bump
+  the example godash constraint to `^2.2.7`.
+
 ## 2.2.9
 
 * `godash upgrade` now reports the resolved godash version (e.g. `2.2.8`)

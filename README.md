@@ -8,7 +8,7 @@ typed, code-generated clients, streaming, server push, reverse calls, a SQLite
 abstraction, and an opt-in zero-copy "hot path" for latency-critical calls.
 
 This package is published to pub.dev: projects depend on it as
-`godash: ^2.2.0` and on the Go module
+`godash: ^2.2.7` and on the Go module
 `github.com/nosuta/godash/v2`. No local source checkout is required.
 Local-development and fork workflows can still use a `path:` dependency.
 
@@ -95,7 +95,6 @@ a `CalcService.Add` (hot path) so you can see both models in generated code.
 ```sh
 godash prepare              # regenerate proto + wiring, flutter create, licenses
 godash proto                # regenerate Go + Dart protobuf code only
-godash dart-api             # refresh the Dart C API headers
 godash macos run            # build the Go lib, then flutter run -d macos
 godash web build            # flutter build web --wasm --release
 godash android apk          # build .so + APK
@@ -113,7 +112,7 @@ godash doctor               # verify toolchain
 
 godash does **not** vendor its source into the project. Instead the project:
 
-- depends on `godash: ^2.2.0` from pub.dev, and on the `native_internal`
+- depends on `godash: ^2.2.7` from pub.dev, and on the `native_internal`
   Flutter plugin materialised at `.godash/native_internal`,
 - has `go.mod` requiring `github.com/nosuta/godash/v2` (no `replace`),
 - declares messages/services in `proto/*.proto`,

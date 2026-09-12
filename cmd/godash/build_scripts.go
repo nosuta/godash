@@ -167,7 +167,6 @@ func buildScriptWebRun(e *projectEnv) string {
 func buildScriptAndroidLibArm64(e *projectEnv) string {
 	ndkToolchain := e.NDKPath + "/toolchains/llvm/prebuilt/darwin-x86_64/bin"
 	return fmt.Sprintf(`
-mkdir -p go/dart_api
 CGO_ENABLED=1 GOOS=android GOARCH=arm64 \
 CC="%s/aarch64-linux-android21-clang" \
 go build -C go -ldflags="-w -s -extldflags=-Wl,-soname=%s" -buildmode=c-shared -tags='android' \
@@ -298,17 +297,6 @@ if [ -d "$HARNESS_SRC" ]; then
 else
   echo "note: go_js_wasm_exec source not present (versioned godash module); skipping wasm test runner setup" >&2
 fi
-`
-}
-
-// dartAPIScript clones the Dart SDK and copies the C API headers into go/dart_api.
-func dartAPIScript() string {
-	return `
-git clone --depth 1 --branch stable https://github.com/dart-lang/sdk /tmp/github.com/dart-lang/sdk
-mkdir -p go/dart_api
-cp -r /tmp/github.com/dart-lang/sdk/runtime/include/* go/dart_api/
-cp /tmp/github.com/dart-lang/sdk/LICENSE go/dart_api/
-rm -rf /tmp/github.com/dart-lang/sdk
 `
 }
 

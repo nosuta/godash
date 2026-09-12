@@ -242,6 +242,30 @@ output. `cmd/godash/wiring_gen_test.go` covers the wiring renderers.
   and is user-owned; don't overwrite it.
 - Do not close Dart `ReceivePort`s from Go.
 
+## Agent skills
+
+Task-focused agent skills live in `.agents/skills/<name>/SKILL.md` (a
+tool-neutral location). Current skills:
+
+- `godash-release` — cutting/publishing a version,
+- `godash-project` — the no-checkout consumption model and CLI workflow,
+- `godash-native-debug` — diagnosing native iOS/macOS/Android failures and logs.
+
+## Releasing
+
+See `RELEASING.md` for the full checklist. Critical couplings:
+
+- The Git tag `vX.Y.Z` must equal `pubspec.yaml` `version:` and be created in the
+  same commit as the version bump. **Never move a published tag** — the Go
+  checksum DB records its hash.
+- The project's **Go module version** (not the Dart package or the CLI) supplies
+  `.godash/native_internal`, so native plugin fixes only reach projects whose
+  `go.mod` requires a module version containing them (`godash upgrade`).
+- `godash new` pins a project to the CLI's own version (`cliVersion()`); the
+  embedded template floor lives in `_template/{pubspec.yaml,_go/go.mod.tmpl}`.
+- `dart pub publish` uses `.pubignore` as an **override** for `.gitignore`; keep
+  it a whitelist and re-exclude `build/`, `.dart_tool/`, etc.
+
 ## Phase status
 
 Tracked in `PLAN.md`: P0 (tests), P1 (response zero-copy + allocator contract),
