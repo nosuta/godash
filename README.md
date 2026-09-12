@@ -29,6 +29,9 @@ Projects depend on it via a local path (`godash: path: ../godash`).
 - **Stream backpressure.** Opt-in per stream: `dropLatest` (conflate),
   `bufferDrop` (ring buffer), `block` (lossless, with a Go credit signal) and
   `batch`, applied in shared Dart on both transports.
+- **Opt-in web shared memory.** With cross-origin isolation, streaming RPCs can
+  publish frames through a per-stream `SharedArrayBuffer` ring and signal with a
+  bare numeric message (envelope fallback preserved).
 - **No code generation step for FFI bindings.** The native ABI is resolved
   dynamically; there is no ffigen/`exported.h` step.
 - **Explicit memory ownership** across the Dart↔Go boundary.
@@ -154,6 +157,8 @@ Bridge  ── native ──▶  dart:ffi ──▶  Go c-shared/c-archive expor
 Bridge.configure(
   appEncryptionKey: AppEncryptionKey.key,
   workerUrl: '${Uri.base.origin}/worker.js?v=${GoBuildVersion.version}',
+  // Optional (web, requires COOP/COEP cross-origin isolation):
+  useSharedMemory: true,
 );
 await Bridge().ready; // optional: wait for the Init exchange to finish
 ```
@@ -256,6 +261,35 @@ for {
 
 Handlers that do not call `FlowFromContext` are unaffected; for them `block`
 still applies Dart-side buffering and source pausing.
+
+### Web shared memory (opt-in)
+
+On web, streaming frames normally cross the worker boundary as transferable
+`ArrayBuffer` envelopes. When the page is cross-origin isolated
+(`Cross-Origin-Opener-Policy: same-origin` + `Cross-Origin-Embedder-Policy:
+require-corp`) and the caller opts in, each stream gets a `SharedArrayBuffer`
+ring instead:
+
+```dart
+Bridge.configure(
+  appEncryptionKey: AppEncryptionKey.key,
+  workerUrl: '${Uri.base.origin}/worker.js?v=${GoBuildVersion.version}',
+  useSharedMemory: true,        // effective only when cross-origin isolated
+  sharedMemorySlots: 4,         // ring depth per stream
+  sharedMemorySlotBytes: 16384, // max frame size per slot
+);
+```
+
+The worker writes each frame into a slot and signals with a bare numeric
+`postMessage`; Dart drains the ring on the signal. Frames that do not fit a slot,
+and frames written while the ring is full, fall back to the normal transferable
+envelope on the same port, so mixed framing keeps ordering and there is no wire
+format change. Unary calls never allocate a ring, and on non-isolated pages the
+bridge logs a warning and keeps the envelope.
+
+> Without COOP/COEP, `SharedArrayBuffer` is unavailable and `useSharedMemory` is
+> ignored. Static hosts must send the two headers; the scaffold's `web/_headers`
+> already does for hosts that honor it (Netlify/Cloudflare Pages).
 
 ### Memory ownership (native)
 
@@ -386,4 +420,4 @@ The performance work is tracked in `PLAN.md`:
 | follow-up: remove ffigen | done |
 | P4 request ownership transfer | done |
 | P5 stream backpressure | done |
-| P6 SharedArrayBuffer (opt-in) | deferred |
+| P6 SharedArrayBuffer (opt-in) | done |

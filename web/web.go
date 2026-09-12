@@ -61,6 +61,7 @@ func onMessage(global js.Value, args []js.Value) any {
 	b := data.Index(1)
 	message := make([]byte, b.Length())
 	js.CopyBytesToGo(message, b)
+	sink := newResponseSink(data, messagePort)
 
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
@@ -71,9 +72,9 @@ func onMessage(global js.Value, args []js.Value) any {
 			return
 		}
 		for resp := range rpc.RPC().Call(ctx, &req) {
-			postMessage(messagePort, resp)
+			sink.send(resp)
 		}
-		postDone(messagePort)
+		sink.done()
 	}()
 	return nil
 }

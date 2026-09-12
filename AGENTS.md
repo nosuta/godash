@@ -159,6 +159,35 @@ preamble (`void* message; int size;`).
   stream's gate is registered (the control request and the stream request may be
   dispatched in either order).
 
+### 6. Web shared-memory contract (P6, opt-in)
+
+- The web bridge only uses a `SharedArrayBuffer` when the caller opts in
+  (`Bridge.configure(useSharedMemory: true)`) **and** the page is cross-origin
+  isolated (`web.window.crossOriginIsolated` + `SharedArrayBuffer` exposed).
+  Otherwise it warns and keeps the transferable envelope. Never make SAB the
+  default and never assume it is available.
+- Layout is shared between `web/shared.go` and `lib/bridge/shared_ring.dart`:
+  a 16-byte control region (`int32` frame counter at offset 0, atomic) followed
+  by `slots` frames of `slotBytes`; each frame is a little-endian `int32` length
+  plus payload. Change both sides together.
+- Exactly one worker goroutine owns a ring (single producer); Dart is the single
+  consumer. The producer updates the frame counter with `Atomics.add` only after
+  writing the payload; the consumer copies the frame out and then `Atomics.sub`.
+- Fallback is mandatory: a frame larger than `slotBytes - 4`, or any frame
+  written while `used == slots`, goes out as a transferable envelope. Because
+  the worker emits exactly one message per frame (numeric signal for a ring
+  frame, byte envelope otherwise) in order, and Dart drains only on numeric
+  signals, mixed SAB/envelope framing preserves ordering. Do not drain the ring
+  on byte messages.
+- A `SharedArrayBuffer` is never transferred (it is shared by reference); only
+  the request `ArrayBuffer` and the `MessagePort` go in the transfer list.
+- Streaming only: `rpcUnsafe`/unary never allocates a ring.
+- Works on both standard Go wasm and TinyGo: only `syscall/js` APIs TinyGo
+  supports are used (`Value.New` with args, `SetIndex`, `Call("subarray")`,
+  `js.CopyBytesToJS`/`CopyBytesToGo`, `js.Global().Get("Atomics"|"Int32Array"|
+  "Uint8Array")`). Verified end to end with a TinyGo `-panic=trap -opt=2` worker
+  in the benchmark (ring used, zero fallbacks).
+
 ## Code generation pipeline
 
 `godash prepare` (in a project) runs, roughly:
@@ -201,6 +230,6 @@ output. `cmd/godash/wiring_gen_test.go` covers the wiring renderers.
 
 Tracked in `PLAN.md`: P0 (tests), P1 (response zero-copy + allocator contract),
 P2 (sync unary), P3 (hot path), the ffigen removal, P4 (request ownership
-transfer) and P5 (stream backpressure) are **done**. Next: P6 (optional
-SharedArrayBuffer on web). Update both the phase checkboxes and the status table
-there, and record benchmark deltas in `benchmark/RESULTS.md`.
+transfer), P5 (stream backpressure) and P6 (opt-in SharedArrayBuffer on web) are
+**done**. Update both the phase checkboxes and the status table there, and record
+benchmark deltas in `benchmark/RESULTS.md`.

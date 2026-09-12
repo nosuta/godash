@@ -11,16 +11,24 @@ import 'package:logging/logging.dart';
 
 import 'package:godash/pb/core.pb.dart';
 import 'package:godash/bridge/backpressure.dart';
+import 'package:godash/bridge/shared_ring.dart';
+import 'package:godash/bridge/shared_ring_web.dart';
 
 /// Configuration for the web [Bridge].
 /// Must be set via [Bridge.configure] before the first [Bridge] access.
 class _BridgeConfig {
   final Future<String> Function() appEncryptionKey;
   final String workerUrl;
+  final bool useSharedMemory;
+  final int sharedMemorySlots;
+  final int sharedMemorySlotBytes;
 
   _BridgeConfig({
     required this.appEncryptionKey,
     required this.workerUrl,
+    required this.useSharedMemory,
+    required this.sharedMemorySlots,
+    required this.sharedMemorySlotBytes,
   });
 }
 
@@ -29,13 +37,26 @@ class Bridge extends ChangeNotifier {
   static _BridgeConfig? _config;
 
   /// Configures the singleton bridge. Call once before using [Bridge].
+  ///
+  /// [useSharedMemory] opts streaming RPCs into a `SharedArrayBuffer` ring
+  /// (P6, PLAN.md). It only takes effect when the page is cross-origin isolated
+  /// (`SharedArrayBuffer` available); otherwise the bridge logs a warning and
+  /// keeps the transferable envelope. [sharedMemorySlots] and
+  /// [sharedMemorySlotBytes] size the per-stream ring; frames that do not fit
+  /// fall back to the envelope automatically.
   static void configure({
     required Future<String> Function() appEncryptionKey,
     required String workerUrl,
+    bool useSharedMemory = false,
+    int sharedMemorySlots = 4,
+    int sharedMemorySlotBytes = 16 * 1024,
   }) {
     _config = _BridgeConfig(
       appEncryptionKey: appEncryptionKey,
       workerUrl: workerUrl,
+      useSharedMemory: useSharedMemory,
+      sharedMemorySlots: sharedMemorySlots,
+      sharedMemorySlotBytes: sharedMemorySlotBytes,
     );
   }
 
@@ -45,8 +66,9 @@ class Bridge extends ChangeNotifier {
         'Bridge not configured. Call Bridge.configure(...) before using Bridge().',
       );
     }
+    final config = _config!;
     _log.info('web bridge instantiate');
-    final workerUrl = _config!.workerUrl;
+    final workerUrl = config.workerUrl;
     _log.info('creating worker: $workerUrl');
     final options = {'type': 'classic'.toJS}.jsify() as web.WorkerOptions;
     final w = web.Worker(workerUrl.toJS, options);
@@ -61,6 +83,20 @@ class Bridge extends ChangeNotifier {
 
     _worker = w;
     _pushController = StreamController<Push>.broadcast();
+
+    _sharedMemorySlots = config.sharedMemorySlots;
+    _sharedMemorySlotBytes = config.sharedMemorySlotBytes;
+    _sharedMemoryEnabled = config.useSharedMemory &&
+        sharedMemorySupported &&
+        config.sharedMemorySlots > 0 &&
+        config.sharedMemorySlotBytes > kSharedRingFrameHeader &&
+        config.sharedMemorySlotBytes % 4 == 0;
+    if (config.useSharedMemory && !sharedMemorySupported) {
+      _log.warning(
+        'shared memory requested but SharedArrayBuffer is unavailable '
+        '(page is not cross-origin isolated); using the envelope',
+      );
+    }
   }
   factory Bridge() {
     _instance ??= Bridge._();
@@ -77,6 +113,13 @@ class Bridge extends ChangeNotifier {
   Int64 _port = Int64(0);
   bool _ready = false;
   bool _fatal = false;
+  bool _sharedMemoryEnabled = false;
+  int _sharedMemorySlots = 0;
+  int _sharedMemorySlotBytes = 0;
+
+  /// True when streaming RPCs use the shared-memory ring (P6). Requires the
+  /// page to be cross-origin isolated and the caller to opt in.
+  bool get usesSharedMemory => _sharedMemoryEnabled;
 
   @override
   void dispose() {
@@ -117,6 +160,32 @@ class Bridge extends ChangeNotifier {
     final src = (bytes is Uint8List ? bytes : Uint8List.fromList(bytes)).toJS;
     view.callMethod('set'.toJS, src);
     return (view, ab);
+  }
+
+  /// Builds the worker message and its transferable list. The request buffer is
+  /// transferred (ownership moves to the Worker); an optional [sharedBuffer] is
+  /// referenced, never transferred, so both sides keep their views.
+  (JSArray<JSAny?> message, JSArray<JSAny?> transfer) _buildWorkerMessage(
+    web.MessagePort port,
+    JSUint8Array view,
+    JSArrayBuffer buffer, {
+    JSObject? sharedBuffer,
+    int slots = 0,
+    int slotBytes = 0,
+  }) {
+    final message = JSArray<JSAny?>()
+      ..add(port)
+      ..add(view);
+    if (sharedBuffer != null) {
+      message
+        ..add(sharedBuffer)
+        ..add(slots.toJS)
+        ..add(slotBytes.toJS);
+    }
+    final transfer = JSArray<JSAny?>()
+      ..add(port)
+      ..add(buffer);
+    return (message, transfer);
   }
 
   void _onGlobalMessage(web.MessageEvent message) {
@@ -221,8 +290,7 @@ class Bridge extends ChangeNotifier {
     }).toJS;
 
     final (view, ab) = _toTransferableBuffer(req.writeToBuffer());
-    final m = <JSObject>{ch.port2, view}.jsify() as JSArray;
-    final t = <JSObject>{ch.port2, ab}.jsify() as JSArray;
+    final (m, t) = _buildWorkerMessage(ch.port2, view, ab);
     _log.info('rpc post message');
     _worker.postMessage(m, t);
     return comp.future;
@@ -276,23 +344,48 @@ class Bridge extends ChangeNotifier {
     req.port = port;
     final ch = web.MessageChannel();
 
+    // P6: when opted in and cross-origin isolated, the worker publishes
+    // streaming frames into a shared ring and only signals with a bare number.
+    SharedRingReader? ring;
+    JSObject? sharedBuffer;
+    if (_sharedMemoryEnabled) {
+      sharedBuffer = createSharedRingBuffer(
+        slots: _sharedMemorySlots,
+        slotBytes: _sharedMemorySlotBytes,
+      );
+      ring = createSharedRingReader(
+        sharedBuffer,
+        slots: _sharedMemorySlots,
+        slotBytes: _sharedMemorySlotBytes,
+      );
+    }
+
+    void handle(Response resp) {
+      if (resp.hasError()) {
+        _log.severe(resp.error.message, null, StackTrace.current);
+        return;
+      }
+      if (resp.hasDone()) {
+        ch.port2.close();
+        ch.port1.close();
+        controller.close();
+        _log.info('rpc stream: done $port');
+        return;
+      }
+      controller.sink.add(resp);
+    }
+
     ch.port1.onmessage = ((web.MessageEvent message) {
       // log.info('prc stream: on message from $port');
+      if (ring != null && message.data.isA<JSNumber>()) {
+        for (final frame in ring.drain()) {
+          handle(Response.fromBuffer(frame));
+        }
+        return;
+      }
       final b = (message.data as JSUint8Array?)?.toDart;
       if (b != null) {
-        final resp = Response.fromBuffer(b);
-        if (resp.hasError()) {
-          _log.severe(resp.error.message, null, StackTrace.current);
-          return;
-        }
-        if (resp.hasDone()) {
-          ch.port2.close();
-          ch.port1.close();
-          controller.close();
-          _log.info('rpc stream: done $port');
-          return;
-        }
-        controller.sink.add(resp);
+        handle(Response.fromBuffer(b));
       }
     }).toJS;
 
@@ -315,8 +408,14 @@ class Bridge extends ChangeNotifier {
     };
 
     final (view, ab) = _toTransferableBuffer(req.writeToBuffer());
-    final m = <JSObject>{ch.port2, view}.jsify() as JSArray;
-    final t = <JSObject>{ch.port2, ab}.jsify() as JSArray;
+    final (m, t) = _buildWorkerMessage(
+      ch.port2,
+      view,
+      ab,
+      sharedBuffer: sharedBuffer,
+      slots: _sharedMemorySlots,
+      slotBytes: _sharedMemorySlotBytes,
+    );
     _log.info('rpc stream: post message to $port');
     _worker.postMessage(m, t);
 

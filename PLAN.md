@@ -192,10 +192,36 @@ implements the buffering at the shared Dart stream layer, with the Go `FlowGate`
 as the opt-in lossless `block` signal. Handlers that never call `FlowFromContext`
 are unaffected.
 
-### P6 — (optional, later) SharedArrayBuffer on web
+### P6 — SharedArrayBuffer on web (opt-in)
 
-True shared-memory zero-copy for streaming hot paths. Requires COOP/COEP cross-origin
-isolation headers. Opt-in only; skip until P5 is stable.
+True shared-memory zero-copy for streaming hot paths. Requires COOP/COEP
+cross-origin isolation headers. Opt-in only.
+
+- [x] Capability probe + opt-in config: `Bridge.configure(useSharedMemory: true,
+      sharedMemorySlots:, sharedMemorySlotBytes:)`. Effective only when the page
+      is cross-origin isolated and `SharedArrayBuffer` is exposed; otherwise the
+      bridge logs a warning and keeps the envelope.
+      → `lib/bridge/shared_ring_web.dart:sharedMemorySupported` +
+      `lib/bridge/bridge_web.dart` (`_sharedMemoryEnabled`).
+- [x] Per-stream shared ring: a `SharedArrayBuffer` with a 16-byte control
+      region (an atomic frame counter) and fixed-size slots. Go writes frames
+      into slots and signals with a bare numeric postMessage; Dart drains on the
+      signal. Frames that do not fit, and frames written while the ring is full,
+      fall back to the transferable envelope on the same port, so ordering is
+      preserved with mixed SAB/envelope framing and no wire-format change.
+      → `web/shared.go` (`sharedRing` / `responseSink`) + `lib/bridge/shared_ring.dart`
+      (`SharedRingReader`) + `lib/bridge/shared_ring_web.dart` (`_JsSharedRingMemory`).
+- [x] Envelope remains the default; unary `rpcUnsafe` never allocates a ring.
+      → only `Bridge.rpcStream` opts in.
+- [x] Tests: Go worker ring protocol (in-order drain, full-ring fallback,
+      oversized-frame fallback) in `web/web_sab_test.go`; the transport-agnostic
+      reader in `test/bridge/shared_ring_test.dart`.
+- [x] Benchmark: the web driver now serves COOP/COEP and gains
+      `--mode stream|sab`; SAB is ~14–18% faster per 4-frame stream
+      (`benchmark/RESULTS.md` "P6").
+- [x] TinyGo compatible: the ring only uses `syscall/js` APIs TinyGo supports;
+      verified with a `-panic=trap -opt=2` benchmark worker (ring used, zero
+      fallbacks, ~12% faster streams than the envelope).
 
 ## Target ownership & allocator rules (after P1/P4)
 
@@ -229,4 +255,4 @@ isolation headers. Opt-in only; skip until P5 is stable.
 | follow-up: remove ffigen | done (hand-written dynamic `native_library.dart`) |
 | P4 Request ownership transfer | done (zero-copy request parse; no `C.GoBytes`) |
 | P5 Stream backpressure | done (pure-Dart strategies + `rpc.FlowGate` credit signal) |
-| P6 SharedArrayBuffer (opt-in) | deferred |
+| P6 SharedArrayBuffer (opt-in) | done (per-stream ring + fallback; ~14–18% faster web streams) |

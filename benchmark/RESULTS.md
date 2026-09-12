@@ -55,13 +55,16 @@ Web:
 GOOS=js GOARCH=wasm go build -o benchmark/web/worker.wasm ./benchmark/web/worker
 cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" benchmark/web/
 go run ./benchmark/web/driver --dir benchmark/web --n 2000
-# flags: --n, --warmup, --payload (bytes), --dir (page assets dir), --timeout
+# flags: --n, --warmup, --payload (bytes), --mode unary|stream|sab,
+#        --count (frames per stream), --dir (page assets dir), --timeout
 ```
 
 The web page (`benchmark/web/index.html` + `bench.js` + `worker.js`) drives
 the real worker protocol: global Done handshake, Init exchange, then one
-fresh `MessageChannel` per echo call, timing each round trip with
-`performance.now()`.
+fresh `MessageChannel` per call, timing each round trip with
+`performance.now()`. The driver serves every response with COOP/COEP so the
+page is cross-origin isolated and `SharedArrayBuffer` is available for
+`--mode sab`.
 
 ## P1 — Response zero-copy + allocator contract
 
@@ -176,6 +179,52 @@ Notes:
   `lib/bridge/bridge_web.dart`.
 
 Reproduce: `dart run benchmark/native/bench.dart --n 5000 [--sync|--hot]`.
+
+## P6 — SharedArrayBuffer on web (opt-in)
+
+Measured after P6 (2026-09-12): with the page cross-origin isolated and
+`Bridge.configure(useSharedMemory: true)` (or `--mode sab` in the harness), a
+streaming call publishes its frames into a per-stream `SharedArrayBuffer` ring
+and the worker only signals with a bare numeric postMessage. Frames too large
+for a slot, or frames written while the ring is full, fall back to the
+transferable envelope on the same port, so ordering is preserved without any
+wire-format change. The Go worker's write path is covered by
+`web/web_sab_test.go`.
+
+Machine: macOS (darwin/arm64, Apple Silicon), Go 1.27, Chrome headless;
+Go wasm worker (not TinyGo). 4 frames per stream, 64 B payload, n=1000 after
+100 warmup. Same session A/B.
+
+| path | min | p50 | p90 | p99 | mean |
+|---|---|---|---|---|---|
+| streaming envelope (`--mode stream`) | 0.10 ms | 0.17 ms | 0.215 ms | 0.37 ms | 0.174 ms |
+| streaming shared ring (`--mode sab`) | 0.09 ms | 0.14 ms | 0.18 ms | 0.36 ms | 0.150 ms |
+
+Notes:
+
+- ~18% lower p50 / ~14% lower mean per 4-frame stream. No frame fell back to
+  the envelope (`sab_fallback_frames: 0`), so the measured path is the ring.
+- The remaining cost is the unavoidable Go↔JS copy (`syscall/js.CopyBytesToJS`
+  cannot alias Go memory) plus the per-frame protobuf marshal on the Go side.
+  SAB removes the per-frame JS `ArrayBuffer` allocation and the transfer
+  bookkeeping; on Dart/Flutter the consumer still copies each frame out of the
+  shared view before parsing.
+- Opt-in by design: without `crossOriginIsolated` (COOP/COEP) the bridge logs a
+  warning and keeps the envelope, and a `hot`-free unary call never allocates a
+  ring. A per-stream SAB is `control (16 B) + slots * slotBytes`.
+
+Reproduce:
+
+```sh
+go run ./benchmark/web/driver --dir benchmark/web --n 1000 --mode stream --count 4
+go run ./benchmark/web/driver --dir benchmark/web --n 1000 --mode sab --count 4
+```
+
+TinyGo: the same worker built with production flags
+(`GOOS=js GOARCH=wasm tinygo build -no-debug -panic=trap -opt=2`) works with the
+ring: zero fallbacks and ~12% faster 4-frame streams than the envelope in the
+same session (p50 3.24 ms stream → 2.83 ms sab). Absolute TinyGo numbers are not
+comparable to the Go-wasm table above; only the relative delta is meaningful.
 
 ## Notes
 
