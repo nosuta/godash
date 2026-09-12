@@ -182,6 +182,12 @@ func TestRenderMainJsVariantsComplementary(t *testing.T) {
 		if !strings.Contains(s, "func main()") {
 			t.Errorf("%s js variant is missing func main():\n%s", name, s)
 		}
+		if !strings.Contains(s, "flaprpc.Close()") {
+			t.Errorf("%s js variant must call flaprpc.Close() (the project entrypoint):\n%s", name, s)
+		}
+		if strings.Contains(s, "\trpc.Close()") {
+			t.Errorf("%s js variant references undefined rpc.Close():\n%s", name, s)
+		}
 	}
 }
 

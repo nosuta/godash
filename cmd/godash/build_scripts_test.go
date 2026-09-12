@@ -78,6 +78,24 @@ func TestGodashModuleBootstrap(t *testing.T) {
 	}
 }
 
+// TestPrepareEntitlementsAvoidRestrictedKeychain guards macOS/iOS debug runs:
+// the empty keychain-access-groups entitlement is a restricted entitlement that
+// forces a development certificate, and the darwin plugin ignores access groups
+// (they are iOS-only), so godash must not inject it.
+func TestPrepareEntitlementsAvoidRestrictedKeychain(t *testing.T) {
+	for name, s := range map[string]string{
+		"ios":   prepareIOSScript(),
+		"macos": prepareMacosScript(),
+	} {
+		if strings.Contains(s, "keychain-access-groups") {
+			t.Errorf("%s prepare script must not add keychain-access-groups:\n%s", name, s)
+		}
+		if !strings.Contains(s, "com.apple.security.network.client") {
+			t.Errorf("%s prepare script should still grant network.client:\n%s", name, s)
+		}
+	}
+}
+
 func TestAndroidScriptsCopySharedLibrary(t *testing.T) {
 	e := sampleEnv()
 	if s := buildScriptAndroidLibArm64(e); !strings.Contains(s, "cp go/build/android-arm64-v8a/libflap.so") {

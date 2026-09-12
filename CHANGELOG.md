@@ -1,3 +1,12 @@
+## 2.2.3
+
+* Fix `godash web run`: the generated `main_js_release.go` referenced an
+  undefined `rpc.Close()`; it now calls the project's `flaprpc.Close()`.
+* Fix native debug runs (e.g. `godash macos run`): stop injecting the empty
+  `keychain-access-groups` entitlement. It is a restricted entitlement that
+  forced a development certificate and broke ad-hoc debug signing, and the
+  darwin secure-storage plugin ignores access groups on macOS.
+
 ## 2.2.2
 
 * Fix `godash web run`: a plain standard-Go wasm build had no `func main`

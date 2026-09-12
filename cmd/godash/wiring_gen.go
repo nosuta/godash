@@ -628,7 +628,7 @@ import (
 func main() {
 	slog.SetLogLoggerLevel(%s)
 	defer func() {
-		rpc.Close()
+		flaprpc.Close()
 		if r := recover(); r != nil {
 			slog.Error("main recovered from panic", "message", r)
 		}

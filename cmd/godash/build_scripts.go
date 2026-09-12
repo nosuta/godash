@@ -120,8 +120,8 @@ perl -pi -e 's/(<manifest .*?>)/$1\n    <uses-permission android:name="android.p
 func prepareIOSScript() string {
 	return `
 flutter create -e --platforms=ios .
-perl -pi -e 's/(<\/dict>)/<key>com.apple.security.network.client<\/key>\n<true\/>\n<key>keychain-access-groups<\/key>\n<array\/>\n$1/' ios/Runner/DebugProfile.entitlements
-perl -pi -e 's/(<\/dict>)/<key>com.apple.security.network.client<\/key>\n<true\/>\n<key>keychain-access-groups<\/key>\n<array\/>\n$1/' ios/Runner/Release.entitlements
+perl -pi -e 's/(<\/dict>)/<key>com.apple.security.network.client<\/key>\n<true\/>\n$1/' ios/Runner/DebugProfile.entitlements
+perl -pi -e 's/(<\/dict>)/<key>com.apple.security.network.client<\/key>\n<true\/>\n$1/' ios/Runner/Release.entitlements
 `
 }
 
@@ -129,8 +129,8 @@ perl -pi -e 's/(<\/dict>)/<key>com.apple.security.network.client<\/key>\n<true\/
 func prepareMacosScript() string {
 	return `
 flutter create -e --platforms=macos .
-perl -pi -e 's/(<\/dict>)/<key>com.apple.security.network.client<\/key>\n<true\/>\n<key>keychain-access-groups<\/key>\n<array\/>\n$1/' macos/Runner/DebugProfile.entitlements
-perl -pi -e 's/(<\/dict>)/<key>com.apple.security.network.client<\/key>\n<true\/>\n<key>keychain-access-groups<\/key>\n<array\/>\n$1/' macos/Runner/Release.entitlements
+perl -pi -e 's/(<\/dict>)/<key>com.apple.security.network.client<\/key>\n<true\/>\n$1/' macos/Runner/DebugProfile.entitlements
+perl -pi -e 's/(<\/dict>)/<key>com.apple.security.network.client<\/key>\n<true\/>\n$1/' macos/Runner/Release.entitlements
 `
 }
 
