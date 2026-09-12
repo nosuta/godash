@@ -51,13 +51,17 @@ Hygiene: `go test ./...` rewrites `sqlite/testdb`; restore with
 | Wiring renderers | `cmd/godash/wiring_gen_test.go` | `HotInvoke`, main.go hot exports, zero-copy request, scan `*.hot.go` | partial |
 | SQLite (native) | `sqlite/sqlite_test.go` | open + basic query | partial |
 | Web worker protocol | `web/web_js_test.go` | onMessage Init/RPC/stream+Done/bad-proto/non-MessageEvent, webPusher | good (needs harness) |
+| Web shared ring (Go) | `web/web_sab_test.go` | in-order drain, full-ring fallback, oversized-frame fallback | good (needs harness) |
+| Dart shared ring | `test/bridge/shared_ring_test.dart` | pure reader: order, wrap-around, empty, sequential drains | good |
+| Dart SAB web interop | `test/web/shared_ring_web_smoke.dart` | real `SharedArrayBuffer` via `_JsSharedRingMemory` (compiled JS + Node in CI) | good (Node; browser isolation not available to the test runner) |
 | Dart byte helpers | `test/bridge/native_bytes_test.dart` | request container, zero-copy response view, free hook, RPC/error/push/string parse | good |
 | Dart backpressure | `test/bridge/backpressure_test.dart` | all strategies + cancellation | good |
 | Bridge config | `test/bridge_test.dart` | configure-before-use | minimal |
 | Flutter plugin stubs | `packages/native_internal/test/*` | default `getPlatformVersion` stubs | not meaningful |
 
-CI currently only builds the CLI release (`.github/workflows/release.yml`).
-There is **no test workflow** — this is the single largest gap.
+CI is `.github/workflows/test.yml`: `go vet`, `go test -race`, the wasm worker
+tests in Chrome, a TinyGo web-worker build, `flutter analyze`, `flutter test`
+and the Dart shared-memory Node smoke.
 
 ---
 
@@ -193,15 +197,22 @@ Implemented in this pass:
 | D4 | `test/integration/native_bridge_test.dart` | 2000×64 KiB sync churn with an RSS-growth bound (catches missing request/response frees) |
 | D7 / E2 / X4 | `.github/workflows/test.yml` (`web` job) | wasm worker protocol tests in Chrome on CI (harness built from `cmd/go_js_wasm_exec`) |
 | L3 / L5 (helpers) | `cmd/godash/cli_unit_test.go` | `toSlug`, `isLocalPath`, `replaceInFile`, `detectGodashDep`, `resolveGodashPath`, `templateMeta` round-trip, `tool.detect` |
+| P6 (Go) | `web/web_sab_test.go` | shared-ring producer: in-order drain, full-ring fallback, oversized-frame fallback |
+| P6 (Dart logic) | `test/bridge/shared_ring_test.dart` | pure `SharedRingReader`: order, wrap-around, empty, sequential drains |
+| P6 (Dart interop) | `test/web/shared_ring_web_smoke.dart` + `dart` CI job | `_JsSharedRingMemory` against a real `SharedArrayBuffer`, compiled to JS and run under Node |
+| E4 | `.github/workflows/test.yml` (`tinygo` job) | TinyGo `-panic=trap -opt=2` web-worker build |
 
 Still open (see §3 for ids): D6 (`transport` with a fake Bridge seam — needs a
 production seam), C3 (compile the generated **Dart** output), L3/L4 (full
 `godash new` scaffold and `prepare`/`upgrade` orchestration, which shell out to
-`flutter`/`git`), E1/E3/E4/E5 (end-to-end scaffold + platform build matrix +
+`flutter`/`git`), E1/E3/E5 (end-to-end scaffold + platform build matrix +
 benchmark smoke), X3 (timeout end-to-end — covered indirectly by the `CallSync`
-timeout and integration error tests). G2 (`GoDash_FreeBytesContainer`) is
-exercised through the Dart integration test (`lib.FreeBytesContainer` drives the
-Go export → C free).
+timeout and integration error tests). D7 remains partially open: the Go ring and
+Dart ring logic/interop are covered, but a full browser integration test of
+`bridge_web` (rpc/rpcStream/push) is still missing because Flutter's Chrome test
+runner does not serve a cross-origin-isolated page. G2
+(`GoDash_FreeBytesContainer`) is exercised through the Dart integration test
+(`lib.FreeBytesContainer` drives the Go export → C free).
 
 Notes from implementation:
 

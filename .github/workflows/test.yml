@@ -44,6 +44,23 @@ jobs:
       - name: Web worker protocol tests
         run: GOOS=js GOARCH=wasm go test -exec /tmp/go_js_wasm_exec ./web
 
+  tinygo:
+    name: TinyGo web worker build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26"
+          cache-dependency-path: go.sum
+      - uses: acifani/setup-tinygo@v3
+        with:
+          tinygo-version: "0.42.0"
+      - name: Download modules
+        run: go mod download
+      - name: Build web worker (TinyGo)
+        run: GOOS=js GOARCH=wasm tinygo build -no-debug -panic=trap -opt=2 -o /tmp/worker_tinygo.wasm ./benchmark/web/worker
+
   dart:
     name: Dart (flutter analyze + test)
     runs-on: macos-latest
@@ -63,3 +80,7 @@ jobs:
         run: flutter analyze lib test benchmark
       - name: Test
         run: flutter test
+      - name: Shared-memory web interop smoke (Node)
+        run: |
+          dart compile js -o /tmp/shared_ring_web_smoke.js test/web/shared_ring_web_smoke.dart
+          node /tmp/shared_ring_web_smoke.js

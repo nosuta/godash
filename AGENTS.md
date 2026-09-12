@@ -40,6 +40,15 @@ flutter test
 (cd cmd/go_js_wasm_exec && go build -o /tmp/go_js_wasm_exec .)
 GOOS=js GOARCH=wasm go test -exec /tmp/go_js_wasm_exec ./web
 
+# TinyGo web worker build (P6 ring uses syscall/js APIs TinyGo must support)
+GOOS=js GOARCH=wasm tinygo build -no-debug -panic=trap -opt=2 -o /tmp/worker_tinygo.wasm ./benchmark/web/worker
+
+# Dart shared-memory web interop smoke. Flutter's Chrome test runner is not
+# cross-origin isolated, so this runs the compiled JS under Node (which always
+# exposes SharedArrayBuffer).
+dart compile js -o /tmp/shared_ring_web_smoke.js test/web/shared_ring_web_smoke.dart
+node /tmp/shared_ring_web_smoke.js
+
 # Native latency benchmark
 go build -buildmode=c-shared -o benchmark/native/libbench.dylib ./benchmark/native
 dart run benchmark/native/bench.dart --n 5000            # async envelope
@@ -56,8 +65,9 @@ Notes:
 - After changing a protoc plugin, run `go install ./cmd/protoc-gen-*` before
   testing generation.
 - The test plan (coverage inventory + gaps) is `TEST_PLAN.md`;
-  `.github/workflows/test.yml` runs `go vet`, `go test -race` and the Flutter
-  analyze/test suite.
+  `.github/workflows/test.yml` runs `go vet`, `go test -race`, the wasm worker
+  tests in Chrome, a TinyGo web-worker build, the Flutter analyze/test suite and
+  the Dart shared-memory Node smoke.
 - `test/integration/native_bridge_test.dart` builds the c-shared benchmark
   backend in `setUpAll` and skips itself if Go is unavailable.
 

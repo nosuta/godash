@@ -290,6 +290,11 @@ bridge logs a warning and keeps the envelope.
 > Without COOP/COEP, `SharedArrayBuffer` is unavailable and `useSharedMemory` is
 > ignored. Static hosts must send the two headers; the scaffold's `web/_headers`
 > already does for hosts that honor it (Netlify/Cloudflare Pages).
+>
+> Dev-mode gotcha: `godash web run` uses `flutter run -d web-server`, which does
+> **not** send COOP/COEP, so shared memory is silently inactive while developing.
+> Exercise it with `godash web build` served by an isolating host, or put the dev
+> server behind a proxy that adds the two headers.
 
 ### Memory ownership (native)
 

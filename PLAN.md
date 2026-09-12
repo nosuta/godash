@@ -241,8 +241,8 @@ cross-origin isolation headers. Opt-in only.
 | Ownership bugs (use-after-free, leaks) under cancel/timeout | P0 tests incl. cancel/timeout paths; P4 releases the request buffer immediately after the synchronous export, so cancel/timeout cannot leak it |
 | Sync path (P2) blocks platform thread on slow handlers | Document contract; keep async path for streams/long work |
 | P3 codegen complexity (two protoc plugins) | Mixed-mode fallback; ship per-service incrementally |
-| TinyGo wasm constraints | Typed exports are native-only; web always uses the envelope (no new wasm ABI surface) |
-| GC retention gotcha on web transfers (documented in `bridge_web.dart`) | Kept and documented (P4 evaluation); request side is not a measured bottleneck |
+| TinyGo wasm constraints | P3 typed exports are native-only; P6's ring uses only `syscall/js` APIs TinyGo supports (verified by a CI build) |
+| GC retention gotcha on web transfers (documented in `bridge_web.dart`) | Kept and documented (P4 evaluation); P6 references the `SharedArrayBuffer` (never transfers it) and falls back to the envelope on overflow |
 
 ## Status
 
