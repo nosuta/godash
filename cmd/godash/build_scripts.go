@@ -48,7 +48,7 @@ protoc -I=proto -I="$GODASH_PATH/proto" \
   --plugin protoc-gen-go-lite="$GOPATH_BIN/protoc-gen-go-lite" \
   --plugin protoc-gen-go-godash="$GOPATH_BIN/protoc-gen-go-godash" \
   --go-lite_out=go --go-lite_opt=module=flap,features=marshal+unmarshal+size+equal+clone \
-  --go-godash_out=go --go-godash_opt=module=flap,core_pkg=github.com/nosuta/godash/pb \
+  --go-godash_out=go --go-godash_opt=module=flap,core_pkg=github.com/nosuta/godash/v2/pb \
   proto/echo.proto
 
 # 5. Rename Lite files and add build tag
@@ -254,7 +254,7 @@ GOOS=js GOARCH=wasm tinygo build -C go -no-debug -panic=trap -opt=2 -o ../web/wo
 // updateGoBuildVersionScript regenerates lib/version/version.dart using
 // the gen_go_build_version tool shipped inside the godash module.
 func updateGoBuildVersionScript() string {
-	return `go run github.com/nosuta/godash/cmd/gen_go_build_version lib/version/version.dart`
+	return `go run github.com/nosuta/godash/v2/cmd/gen_go_build_version lib/version/version.dart`
 }
 
 // updateGoBuildVersionWebScript rewrites web/worker.js with a cache-busting

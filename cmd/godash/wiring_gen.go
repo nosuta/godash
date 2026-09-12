@@ -256,7 +256,7 @@ package rpc
 import (
 	"context"
 
-	"github.com/nosuta/godash/pb"
+	"github.com/nosuta/godash/v2/pb"
 	`)
 	b.WriteString(mod.PbAlias)
 	b.WriteString(" \"")
@@ -391,9 +391,9 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/nosuta/godash/dart_api"
-	"github.com/nosuta/godash/pb"
-	"github.com/nosuta/godash/rpc"
+	"github.com/nosuta/godash/v2/dart_api"
+	"github.com/nosuta/godash/v2/pb"
+	"github.com/nosuta/godash/v2/rpc"
 	flaprpc %q
 )
 
@@ -563,8 +563,8 @@ func renderMainJsGo(mod moduleInfo) string {
 package main
 
 import (
-	"github.com/nosuta/godash/rpc"
-	"github.com/nosuta/godash/web"
+	"github.com/nosuta/godash/v2/rpc"
+	"github.com/nosuta/godash/v2/web"
 	flaprpc %q
 )
 

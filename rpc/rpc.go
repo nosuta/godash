@@ -6,8 +6,8 @@ import (
 	"log/slog"
 	"sync"
 
-	"github.com/nosuta/godash/pb"
-	"github.com/nosuta/godash/pusher"
+	"github.com/nosuta/godash/v2/pb"
+	"github.com/nosuta/godash/v2/pusher"
 )
 
 var instance *rpc

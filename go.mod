@@ -1,4 +1,4 @@
-module github.com/nosuta/godash
+module github.com/nosuta/godash/v2
 
 go 1.26.0
 

@@ -41,7 +41,7 @@ func TestLoadProjectEnvAt(t *testing.T) {
 	if err := os.MkdirAll(godash, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(godash, "go.mod"), []byte("module github.com/nosuta/godash\n\ngo 1.26\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(godash, "go.mod"), []byte("module github.com/nosuta/godash/v2\n\ngo 1.26\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 

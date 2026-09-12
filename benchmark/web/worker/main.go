@@ -9,8 +9,8 @@ package main
 import (
 	"log/slog"
 
-	"github.com/nosuta/godash/benchmark/bench"
-	"github.com/nosuta/godash/web"
+	"github.com/nosuta/godash/v2/benchmark/bench"
+	"github.com/nosuta/godash/v2/web"
 )
 
 func init() {

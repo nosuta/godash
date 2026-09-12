@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nosuta/godash/pb"
+	"github.com/nosuta/godash/v2/pb"
 )
 
 func creditPayload(port int64, credits int32) []byte {

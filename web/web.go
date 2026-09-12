@@ -10,8 +10,8 @@ import (
 	"syscall/js"
 	"time"
 
-	"github.com/nosuta/godash/pb"
-	"github.com/nosuta/godash/rpc"
+	"github.com/nosuta/godash/v2/pb"
+	"github.com/nosuta/godash/v2/rpc"
 )
 
 // RunWebWorker installs the message handler, wires the pusher, and blocks forever.

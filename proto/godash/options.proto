@@ -9,7 +9,7 @@ package godash;
 
 import "google/protobuf/descriptor.proto";
 
-option go_package = "github.com/nosuta/godash/pb";
+option go_package = "github.com/nosuta/godash/v2/pb";
 
 extend google.protobuf.MethodOptions {
   // hot marks a unary method as eligible for the packed-struct FFI fast path.

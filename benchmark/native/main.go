@@ -27,10 +27,10 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/nosuta/godash/benchmark/bench"
-	"github.com/nosuta/godash/dart_api"
-	"github.com/nosuta/godash/pb"
-	"github.com/nosuta/godash/rpc"
+	"github.com/nosuta/godash/v2/benchmark/bench"
+	"github.com/nosuta/godash/v2/dart_api"
+	"github.com/nosuta/godash/v2/pb"
+	"github.com/nosuta/godash/v2/rpc"
 )
 
 func init() {

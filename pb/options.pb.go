@@ -54,7 +54,7 @@ var File_godash_options_proto protoreflect.FileDescriptor
 const file_godash_options_proto_rawDesc = "" +
 	"\n" +
 	"\x14godash/options.proto\x12\x06godash\x1a google/protobuf/descriptor.proto:2\n" +
-	"\x03hot\x12\x1e.google.protobuf.MethodOptions\x18ц\x03 \x01(\bR\x03hotB\x1dZ\x1bgithub.com/nosuta/godash/pbb\x06proto3"
+	"\x03hot\x12\x1e.google.protobuf.MethodOptions\x18ц\x03 \x01(\bR\x03hotB Z\x1egithub.com/nosuta/godash/v2/pbb\x06proto3"
 
 var file_godash_options_proto_goTypes = []any{
 	(*descriptorpb.MethodOptions)(nil), // 0: google.protobuf.MethodOptions

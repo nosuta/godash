@@ -8,8 +8,8 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 
-	"github.com/nosuta/godash/internal/hotlayout"
-	godashpb "github.com/nosuta/godash/pb"
+	"github.com/nosuta/godash/v2/internal/hotlayout"
+	godashpb "github.com/nosuta/godash/v2/pb"
 )
 
 func main() {

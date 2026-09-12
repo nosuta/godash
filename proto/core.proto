@@ -4,7 +4,7 @@ syntax = "proto3";
 // Dart package name
 package pb;
 // Go package name
-option go_package = "github.com/nosuta/godash/pb";
+option go_package = "github.com/nosuta/godash/v2/pb";
 
 //////////////////////////////
 //        Primitives

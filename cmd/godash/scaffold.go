@@ -9,7 +9,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/nosuta/godash/cmd/godash/assets"
+	"github.com/nosuta/godash/v2/cmd/godash/assets"
 )
 
 // embeddedTemplateSource marks the project template embedded in the CLI. It is

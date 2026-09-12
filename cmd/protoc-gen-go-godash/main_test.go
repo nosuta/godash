@@ -12,7 +12,7 @@ import (
 	"google.golang.org/protobuf/types/descriptorpb"
 	"google.golang.org/protobuf/types/pluginpb"
 
-	godashpb "github.com/nosuta/godash/pb"
+	godashpb "github.com/nosuta/godash/v2/pb"
 )
 
 // buildGoRequest builds a CodeGeneratorRequest for a single service `S` with a
@@ -74,7 +74,7 @@ func generateGoFiles(t *testing.T, req *pluginpb.CodeGeneratorRequest) map[strin
 		if !f.Generate {
 			continue
 		}
-		generateFile(gen, f, "github.com/nosuta/godash/pb")
+		generateFile(gen, f, "github.com/nosuta/godash/v2/pb")
 	}
 	resp := gen.Response()
 	if resp.GetError() != "" {

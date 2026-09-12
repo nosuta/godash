@@ -79,7 +79,7 @@ Platform support:
 Install the CLI and scaffold a project:
 
 ```sh
-go install github.com/nosuta/godash/cmd/godash@latest
+go install github.com/nosuta/godash/v2/cmd/godash@latest
 godash                      # interactive: creates a project from the template
 cd my_app
 godash macos run            # or: godash ios / godash android apk / godash web run
@@ -112,7 +112,7 @@ godash doctor               # verify toolchain
 godash does **not** vendor its source into the project. Instead the project:
 
 - depends on `godash: path: ../godash` (and `native_internal`),
-- has `go.mod` with `replace github.com/nosuta/godash => ../godash`,
+- has `go.mod` with `replace github.com/nosuta/godash/v2 => ../godash`,
 - declares messages/services in `proto/*.proto`,
 - implements Go handlers in `go/rpc/*_server.go`,
 - calls the generated Dart clients from `lib/`.

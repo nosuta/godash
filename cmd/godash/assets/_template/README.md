@@ -61,7 +61,7 @@ The template does NOT vendor any godash source. Instead:
 
 - `pubspec.yaml` depends on `godash: path: ../godash` and
   `native_internal: path: ../godash/packages/native_internal`.
-- `go.mod` has `replace github.com/nosuta/godash => ../godash`.
+- `go.mod` has `replace github.com/nosuta/godash/v2 => ../godash`.
 - On every `godash prepare` (and every build), godash:
   - extracts the web platform assets (index.html, worker.js, …) from
     embedded data into `<project>/web/`,
@@ -115,7 +115,7 @@ Use the `godash` CLI:
 
 ```sh
 # Install godash
-go install github.com/nosuta/godash/cmd/godash@latest
+go install github.com/nosuta/godash/v2/cmd/godash@latest
 
 # Create a new project (interactive)
 godash
@@ -140,7 +140,7 @@ For path-dep projects (this template's default), `godash upgrade` runs
 `git pull` in `../godash`, refreshes `flutter pub get` and `go mod
 download`, then re-runs `godash prepare` to regenerate derived files.
 For version-pinned projects, it runs `flutter pub upgrade godash
-native_internal` and `go get -u github.com/nosuta/godash` instead.
+native_internal` and `go get -u github.com/nosuta/godash/v2` instead.
 
 > The legacy `flap` command and `FLAP_TEMPLATE` environment variable
 > still work as aliases for backward compatibility.

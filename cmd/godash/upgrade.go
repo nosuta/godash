@@ -26,7 +26,7 @@ const (
 // at the path declared in pubspec.yaml. `godash upgrade` runs
 // `git pull` there. For version-pinned projects, it runs
 // `flutter pub upgrade godash native_internal` and
-// `go get -u github.com/nosuta/godash`.
+// `go get -u github.com/nosuta/godash/v2`.
 func runUpgrade(args []string) {
 	cwd, err := os.Getwd()
 	if err != nil {

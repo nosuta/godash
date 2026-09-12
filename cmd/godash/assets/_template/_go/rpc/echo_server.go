@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/nosuta/godash/pb"
+	"github.com/nosuta/godash/v2/pb"
 	flap "flap/pb"
 )
 

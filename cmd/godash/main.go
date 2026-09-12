@@ -163,7 +163,7 @@ refresh the godash dependency, then re-run prepare.
 Behaviour by dependency type (detected from pubspec.yaml):
   - "path: ../godash"  runs "git pull" in the godash dir, then regenerates
   - "godash: ^1.2.0"   runs "flutter pub upgrade godash native_internal",
-                       then "go get -u github.com/nosuta/godash",
+                       then "go get -u github.com/nosuta/godash/v2",
                        then regenerates
 
 After upgrading, the regenerated files are committed automatically if

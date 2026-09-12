@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nosuta/godash/pb"
+	"github.com/nosuta/godash/v2/pb"
 )
 
 const testTimeout = 3 * time.Second

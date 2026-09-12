@@ -776,7 +776,7 @@ const file_core_proto_rawDesc = "" +
 	"\x04Push\x12\x12\n" +
 	"\x04type\x18\x01 \x01(\tR\x04type\x12\x18\n" +
 	"\apayload\x18\x02 \x01(\fR\apayload\x12!\n" +
-	"\freverse_port\x18\x03 \x01(\x03R\vreversePortB\x1dZ\x1bgithub.com/nosuta/godash/pbb\x06proto3"
+	"\freverse_port\x18\x03 \x01(\x03R\vreversePortB Z\x1egithub.com/nosuta/godash/v2/pbb\x06proto3"
 
 var (
 	file_core_proto_rawDescOnce sync.Once

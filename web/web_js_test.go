@@ -21,8 +21,8 @@ import (
 
 	"syscall/js"
 
-	"github.com/nosuta/godash/pb"
-	"github.com/nosuta/godash/rpc"
+	"github.com/nosuta/godash/v2/pb"
+	"github.com/nosuta/godash/v2/rpc"
 )
 
 const jsTestTimeout = 10 * time.Second

@@ -9,7 +9,7 @@ import (
 	"google.golang.org/protobuf/types/descriptorpb"
 	"google.golang.org/protobuf/types/pluginpb"
 
-	godashpb "github.com/nosuta/godash/pb"
+	godashpb "github.com/nosuta/godash/v2/pb"
 )
 
 // buildDartRequest builds a request with a normal service (unary hot + server
@@ -50,7 +50,7 @@ func buildDartRequest(t *testing.T) *pluginpb.CodeGeneratorRequest {
 		Name:    proto.String("godash/options.proto"),
 		Package: proto.String("godash"),
 		Syntax:  proto.String("proto3"),
-		Options: &descriptorpb.FileOptions{GoPackage: proto.String("github.com/nosuta/godash/pb")},
+		Options: &descriptorpb.FileOptions{GoPackage: proto.String("github.com/nosuta/godash/v2/pb")},
 	}
 	return &pluginpb.CodeGeneratorRequest{
 		FileToGenerate: []string{"test.proto"},

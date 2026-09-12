@@ -7,7 +7,7 @@ package web
 import (
 	"syscall/js"
 
-	"github.com/nosuta/godash/pb"
+	"github.com/nosuta/godash/v2/pb"
 )
 
 // Shared-memory ring layout (mirrored by lib/bridge/shared_ring.dart):

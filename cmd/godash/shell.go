@@ -7,7 +7,7 @@ import (
 	"os/exec"
 	"time"
 
-	"github.com/nosuta/godash/cmd/godash/assets"
+	"github.com/nosuta/godash/v2/cmd/godash/assets"
 )
 
 // runShellTask runs a shell script in cwd with a spinner.
