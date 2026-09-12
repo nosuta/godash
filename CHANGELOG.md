@@ -1,3 +1,10 @@
+## 2.2.4
+
+* Fix the starter app on native platforms: `lib/main.dart` no longer evaluates
+  `Uri.base.origin` (a web-only expression) unconditionally, which threw
+  `Bad state: Origin is only applicable schemes http and https` on
+  macOS/iOS/Android. The worker URL is now only computed on web (`kIsWeb`).
+
 ## 2.2.3
 
 * Fix `godash web run`: the generated `main_js_release.go` referenced an

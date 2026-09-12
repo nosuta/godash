@@ -21,9 +21,15 @@ Future<void> main() async {
   usePathUrlStrategy();
   WidgetsFlutterBinding.ensureInitialized();
 
+  // `Uri.base.origin` is only valid for http/https (web); on native the base
+  // URI is a file: URI and workerUrl is ignored by the native bridge.
+  final workerUrl = kIsWeb
+      ? '${Uri.base.origin}/worker.js?v=${GoBuildVersion.version}'
+      : '';
+
   Bridge.configure(
     appEncryptionKey: AppEncryptionKey.key,
-    workerUrl: '${Uri.base.origin}/worker.js?v=${GoBuildVersion.version}',
+    workerUrl: workerUrl,
   );
 
   runApp(const StarterApp());
