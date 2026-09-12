@@ -1,3 +1,13 @@
+## 2.2.7
+
+* Fix iOS/macOS calls failing with `Failed to lookup symbol
+  'FreeBytesContainer'`: the `native_internal` SPM manifests now force-link
+  every Go export the Dart bridge resolves (`InitializeDartAPI`, `RPC`,
+  `CallSync`, `FreeBytesContainer`), so the Apple linker no longer
+  dead-strips them.
+* Force-link per-project hot-path exports too: the CLI injects a `-u` flag for
+  each discovered hot method into the materialised `Package.swift`.
+
 ## 2.2.6
 
 * Fix Android scaffolding: `applyConfig` now renames and moves the generated

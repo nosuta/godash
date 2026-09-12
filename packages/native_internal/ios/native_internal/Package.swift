@@ -25,8 +25,13 @@ let package = Package(
                 .product(name: "FlutterFramework", package: "FlutterFramework")
             ],
             linkerSettings: [
+                // The Go exports are looked up at runtime with dlsym
+                // (DynamicLibrary.process()), so the linker must not dead-strip
+                // them: force each symbol the Dart bridge resolves.
                 .unsafeFlags(["-Xlinker", "-u", "-Xlinker", "_InitializeDartAPI"]),
-                .unsafeFlags(["-Xlinker", "-u", "-Xlinker", "_RPC"])
+                .unsafeFlags(["-Xlinker", "-u", "-Xlinker", "_RPC"]),
+                .unsafeFlags(["-Xlinker", "-u", "-Xlinker", "_CallSync"]),
+                .unsafeFlags(["-Xlinker", "-u", "-Xlinker", "_FreeBytesContainer"])//GODASH_HOT_LINKER_FLAGS
             ]
         )
     ]

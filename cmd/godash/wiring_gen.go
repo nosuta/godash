@@ -222,7 +222,53 @@ func writeWiringFiles(projectRoot, licensesTplPath string) error {
 		return err
 	}
 
+	// Native (iOS/macOS) hot-path exports are dynamically named and are looked
+	// up at runtime with dlsym, so the materialised SPM manifests must
+	// force-link each of them or the linker dead-strips them.
+	if err := patchNativeLinkerHotSymbols(projectRoot, hot); err != nil {
+		return fmt.Errorf("patch native linker hot symbols: %w", err)
+	}
+
 	_ = licensesTplPath // currently unused; reserved for future embed wiring
+	return nil
+}
+
+// godashHotLinkerMarker is a marker comment in the native_internal
+// Package.swift linkerSettings. godash replaces it with a `-u _<symbol>`
+// linker flag for every discovered hot-path export.
+const godashHotLinkerMarker = "//GODASH_HOT_LINKER_FLAGS"
+
+// patchNativeLinkerHotSymbols injects force-link flags for the project's
+// hot-path Go exports into the materialised native_internal SPM manifests
+// (.godash/native_internal/{ios,macos}/.../Package.swift). It is best-effort:
+// platform dirs that were never materialised are skipped.
+func patchNativeLinkerHotSymbols(projectRoot string, hot []hotInfo) error {
+	var entries []string
+	for _, h := range hot {
+		entries = append(entries, fmt.Sprintf(`                .unsafeFlags(["-Xlinker", "-u", "-Xlinker", "_%s"])`, h.Name))
+	}
+	repl := ""
+	if len(entries) > 0 {
+		repl = ",\n" + strings.Join(entries, ",\n")
+	}
+	for _, rel := range []string{
+		filepath.Join(".godash", "native_internal", "ios", "native_internal", "Package.swift"),
+		filepath.Join(".godash", "native_internal", "macos", "native_internal", "Package.swift"),
+	} {
+		path := filepath.Join(projectRoot, rel)
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue // not materialised
+		}
+		s := string(data)
+		if !strings.Contains(s, godashHotLinkerMarker) {
+			continue
+		}
+		s = strings.Replace(s, godashHotLinkerMarker, repl, 1)
+		if err := os.WriteFile(path, []byte(s), 0644); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

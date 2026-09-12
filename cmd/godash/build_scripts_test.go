@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
@@ -92,6 +93,31 @@ func TestPrepareEntitlementsAvoidRestrictedKeychain(t *testing.T) {
 		}
 		if !strings.Contains(s, "com.apple.security.network.client") {
 			t.Errorf("%s prepare script should still grant network.client:\n%s", name, s)
+		}
+	}
+}
+
+// TestNativeInternalForcesAllDartSymbols guards iOS/macOS static linking: the
+// Dart bridge resolves these Go exports at runtime with dlsym, so the SPM
+// package must force-link every one of them or the linker dead-strips them
+// (e.g. "Failed to lookup symbol 'FreeBytesContainer'").
+func TestNativeInternalForcesAllDartSymbols(t *testing.T) {
+	symbols := []string{"_InitializeDartAPI", "_RPC", "_CallSync", "_FreeBytesContainer"}
+	for _, rel := range []string{
+		"../../packages/native_internal/ios/native_internal/Package.swift",
+		"../../packages/native_internal/macos/native_internal/Package.swift",
+	} {
+		b, err := os.ReadFile(rel)
+		if err != nil {
+			t.Fatalf("read %s: %v", rel, err)
+		}
+		for _, sym := range symbols {
+			if !strings.Contains(string(b), sym) {
+				t.Errorf("%s must force-link %s", rel, sym)
+			}
+		}
+		if !strings.Contains(string(b), godashHotLinkerMarker) {
+			t.Errorf("%s must keep the %s injection marker", rel, godashHotLinkerMarker)
 		}
 	}
 }
