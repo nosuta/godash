@@ -352,8 +352,59 @@ func applyConfig(cfg scaffoldConfig) error {
 			filepath.Join(cfg.dir, "macos", "Runner", "Configs", "AppInfo.xcconfig"),
 			`PRODUCT_BUNDLE_IDENTIFIER = com.example.flap`, `PRODUCT_BUNDLE_IDENTIFIER = `+cfg.bundleID,
 		)
+		if err := renameAndroidPackage(cfg.dir, "com.example.flap", cfg.bundleID); err != nil {
+			return err
+		}
 		return nil
 	})
+}
+
+// androidPackagePath converts a bundle id (a.b.c) to a source-relative path
+// (a/b/c).
+func androidPackagePath(bundleID string) string {
+	return filepath.FromSlash(strings.ReplaceAll(bundleID, ".", "/"))
+}
+
+// renameAndroidPackage moves the generated Kotlin package from oldPkg to
+// newPkg and rewrites its package/import references.
+//
+// `flutter create` generates MainActivity at com.example.flap, and the Android
+// manifest refers to it as ".MainActivity" (relative to the gradle namespace).
+// When applyConfig changes the namespace/applicationId to the user's bundle id,
+// the Kotlin source must move too, or the activity class cannot be found at
+// startup (ClassNotFoundException: ...MainActivity).
+func renameAndroidPackage(projectDir, oldPkg, newPkg string) error {
+	if oldPkg == newPkg {
+		return nil
+	}
+	base := filepath.Join(projectDir, "android", "app", "src")
+	oldPath := androidPackagePath(oldPkg)
+	newPath := androidPackagePath(newPkg)
+	for _, kind := range []string{"main", "test", "androidTest"} {
+		kotlinRoot := filepath.Join(base, kind, "kotlin")
+		if _, err := os.Stat(kotlinRoot); err != nil {
+			continue
+		}
+		// Rewrite package declarations and imports before moving.
+		_ = filepath.Walk(kotlinRoot, func(p string, info os.FileInfo, err error) error {
+			if err != nil || info.IsDir() || !strings.HasSuffix(p, ".kt") {
+				return nil
+			}
+			return replaceInFile(p, oldPkg, newPkg)
+		})
+		srcDir := filepath.Join(kotlinRoot, oldPath)
+		if _, err := os.Stat(srcDir); err != nil {
+			continue
+		}
+		dstDir := filepath.Join(kotlinRoot, newPath)
+		if err := os.MkdirAll(filepath.Dir(dstDir), 0o755); err != nil {
+			return err
+		}
+		if err := os.Rename(srcDir, dstDir); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func replaceInFile(path, old, new string) error {

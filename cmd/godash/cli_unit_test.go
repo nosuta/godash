@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -35,6 +36,36 @@ func TestIsLocalPath(t *testing.T) {
 		if got := isLocalPath(in); got != want {
 			t.Errorf("isLocalPath(%q) = %v, want %v", in, got, want)
 		}
+	}
+}
+
+// TestRenameAndroidPackage guards Android scaffolding: applyConfig changes the
+// gradle namespace/applicationId to the user's bundle id, so the generated
+// MainActivity package must be renamed/moved or the app crashes on launch with
+// ClassNotFoundException: ...MainActivity.
+func TestRenameAndroidPackage(t *testing.T) {
+	dir := t.TempDir()
+	oldFile := filepath.Join(dir, "android", "app", "src", "main", "kotlin", "com", "example", "flap", "MainActivity.kt")
+	if err := os.MkdirAll(filepath.Dir(oldFile), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(oldFile, []byte("package com.example.flap\n\nclass MainActivity\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := renameAndroidPackage(dir, "com.example.flap", "com.acme.good"); err != nil {
+		t.Fatalf("renameAndroidPackage: %v", err)
+	}
+	newFile := filepath.Join(dir, "android", "app", "src", "main", "kotlin", "com", "acme", "good", "MainActivity.kt")
+	b, err := os.ReadFile(newFile)
+	if err != nil {
+		t.Fatalf("expected the Kotlin file at the new package path: %v", err)
+	}
+	if !strings.Contains(string(b), "package com.acme.good") {
+		t.Errorf("package declaration not rewritten: %q", string(b))
+	}
+	if _, err := os.Stat(oldFile); err == nil {
+		t.Error("old package path must be gone after the rename")
 	}
 }
 

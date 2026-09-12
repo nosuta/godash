@@ -1,3 +1,10 @@
+## 2.2.6
+
+* Fix Android scaffolding: `applyConfig` now renames and moves the generated
+  `MainActivity` Kotlin package when the bundle id changes the gradle
+  namespace/applicationId. Previously the app crashed on launch with
+  `ClassNotFoundException: <bundleId>.MainActivity`.
+
 ## 2.2.5
 
 * Fix the macOS starter app keychain failure (`errSecMissingEntitlement`,
