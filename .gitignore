@@ -8,7 +8,8 @@
 *.test
 *.out
 vendor/
-go.sum
+# NOTE: go.sum MUST be committed (root module and nested modules) so CI can
+# build with -mod=readonly on a fresh checkout. Do not re-add it here.
 
 # Dart / Flutter
 .dart_tool/
