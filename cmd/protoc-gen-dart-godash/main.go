@@ -46,7 +46,7 @@ func generateFile(gen *protogen.Plugin, file *protogen.File) {
 	if idx != -1 {
 		basename = basename[idx+1:]
 	}
-	filename := basename + ".flap.dart"
+	filename := basename + ".godash.dart"
 
 	g := gen.NewGeneratedFile(filename, "")
 

@@ -73,7 +73,7 @@ class Bridge extends ChangeNotifier {
 
   static const String _libName = String.fromEnvironment(
     'LIB_NAME',
-    defaultValue: 'libflap',
+    defaultValue: 'libgodash',
   );
   final _log = Logger('Bridge Native');
   final _lib = NativeLibrary(_dylib());

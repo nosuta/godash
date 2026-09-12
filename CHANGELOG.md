@@ -1,3 +1,20 @@
+## 2.3.0
+
+* Rename the remaining old project-name identifiers to `godash` (breaking for
+  existing projects): generated code is now `*.godash.go` / `*.godash.dart`
+  (was `*.flap.*`), and the native library is `libgodash` (was `libflap`). The
+  `FLAP_TEMPLATE` alias is removed; use `GODASH_TEMPLATE`.
+* Parameterise the scaffolded app identity. `godash new` now rewrites the
+  template app placeholder to the project's package name in `pubspec.yaml`,
+  `go/go.mod`, `go_package` and the Dart/Go imports (the fixed template name
+  could not become `godash` without colliding with the dependency).
+* Proto generation resolves the module name from `go/go.mod` (`$GO_MODULE`)
+  instead of a hardcoded value.
+
+Existing projects: after `godash prepare`, update the generated-client imports
+under `lib/`:
+`rg -l '\.flap\.dart' lib | xargs sed -i '' 's/\.flap\.dart/.godash.dart/g'`.
+
 ## 2.2.11
 
 * Show the real CLI version in `godash -h`: the installed Go module tag
@@ -64,7 +81,7 @@
 ## 2.2.3
 
 * Fix `godash web run`: the generated `main_js_release.go` referenced an
-  undefined `rpc.Close()`; it now calls the project's `flaprpc.Close()`.
+  undefined `rpc.Close()`; it now calls the project entrypoint's `Close()`.
 * Fix native debug runs (e.g. `godash macos run`): stop injecting the empty
   `keychain-access-groups` entitlement. It is a restricted entitlement that
   forced a development certificate and broke ad-hoc debug signing, and the

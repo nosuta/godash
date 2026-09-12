@@ -10,7 +10,7 @@ func sampleEnv() *projectEnv {
 	return &projectEnv{
 		Root:              "/proj",
 		GodashPath:        "/godash",
-		LibName:           "libflap",
+		LibName:           "libgodash",
 		NDKPath:           "/ndk",
 		IOSDeployment:     "13.0",
 		MacosDeployment:   "10.15",
@@ -124,10 +124,10 @@ func TestNativeInternalForcesAllDartSymbols(t *testing.T) {
 
 func TestAndroidScriptsCopySharedLibrary(t *testing.T) {
 	e := sampleEnv()
-	if s := buildScriptAndroidLibArm64(e); !strings.Contains(s, "cp go/build/android-arm64-v8a/libflap.so") {
+	if s := buildScriptAndroidLibArm64(e); !strings.Contains(s, "cp go/build/android-arm64-v8a/libgodash.so") {
 		t.Errorf("arm64 script should copy the .so into the plugin:\n%s", s)
 	}
-	if s := buildScriptAndroidLibX86_64(e); !strings.Contains(s, "cp go/build/android-x86_64/libflap.so") {
+	if s := buildScriptAndroidLibX86_64(e); !strings.Contains(s, "cp go/build/android-x86_64/libgodash.so") {
 		t.Errorf("x86_64 script should copy the .so into the plugin:\n%s", s)
 	}
 }

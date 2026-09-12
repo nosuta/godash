@@ -6,17 +6,17 @@ import (
 	"log/slog"
 
 	"github.com/nosuta/godash/v2/pb"
-	flap "flap/pb"
+	godashapp "godashapp/pb"
 )
 
 type EchoServer struct{}
 
-func (s *EchoServer) Echo(ctx context.Context, req *flap.EchoRequest) (*flap.EchoResponse, error) {
+func (s *EchoServer) Echo(ctx context.Context, req *godashapp.EchoRequest) (*godashapp.EchoResponse, error) {
 	slog.Info("EchoServer.Echo called", "msg", req.Message)
-	return &flap.EchoResponse{Message: req.Message}, nil
+	return &godashapp.EchoResponse{Message: req.Message}, nil
 }
 
-func (s *EchoServer) ServerStream(ctx context.Context, req *flap.EchoRequest, ch chan<- *pb.Response) error {
+func (s *EchoServer) ServerStream(ctx context.Context, req *godashapp.EchoRequest, ch chan<- *pb.Response) error {
 	slog.Info("EchoServer.ServerStream called", "msg", req.Message)
 	for i := 0; i < 5; i++ {
 		msg := fmt.Sprintf("Stream %d: %s", i, req.Message)
@@ -24,7 +24,7 @@ func (s *EchoServer) ServerStream(ctx context.Context, req *flap.EchoRequest, ch
 		ch <- &pb.Response{
 			Responses: &pb.Response_RpcResponse{
 				RpcResponse: &pb.RpcResponse{
-					Payload: pb.MarshalHelper(&flap.EchoResponse{Message: msg}),
+					Payload: pb.MarshalHelper(&godashapp.EchoResponse{Message: msg}),
 				},
 			},
 		}

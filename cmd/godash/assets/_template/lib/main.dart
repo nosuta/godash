@@ -6,10 +6,10 @@ import 'package:flutter_web_plugins/url_strategy.dart';
 import 'package:logging/logging.dart';
 
 import 'package:godash/bridge/bridge.dart';
-import 'package:flap/app_encryption_key/app_encryption_key.dart';
-import 'package:flap/pb/echo.pb.dart';
-import 'package:flap/pb/echo.flap.dart';
-import 'package:flap/version/version.dart';
+import 'package:godashapp/app_encryption_key/app_encryption_key.dart';
+import 'package:godashapp/pb/echo.pb.dart';
+import 'package:godashapp/pb/echo.godash.dart';
+import 'package:godashapp/version/version.dart';
 
 Future<void> main() async {
   Logger.root.level = kDebugMode ? Level.CONFIG : Level.INFO;

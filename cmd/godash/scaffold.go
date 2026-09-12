@@ -14,21 +14,22 @@ import (
 )
 
 // embeddedTemplateSource marks the project template embedded in the CLI. It is
-// the default `godash new` source; GODASH_TEMPLATE (or the deprecated
-// FLAP_TEMPLATE) can override it with a local path or remote Git URL.
+// the default `godash new` source; GODASH_TEMPLATE can override it with a local
+// path or remote Git URL.
 const embeddedTemplateSource = "embedded"
 
 // scaffoldConfig captures the user-provided inputs for a new project.
 type scaffoldConfig struct {
 	dir      string // directory / project name
 	appName  string // display name e.g. "My App"
+	pkg      string // Dart/Go package name (slug of appName)
 	bundleID string // e.g. com.example.myapp
 }
 
 var reBundleID = regexp.MustCompile(`^[a-z][a-z0-9]*(\.[a-z][a-z0-9]*){2,}$`)
 
 func runScaffold(args []string) {
-	fmt.Printf("godash %s\n", Version)
+	fmt.Printf("godash %s\n", versionString())
 	fmt.Println()
 
 	// 1. dependency check
@@ -56,6 +57,7 @@ func runScaffold(args []string) {
 
 	// 2. interactive prompts
 	cfg := promptScaffoldConfig()
+	cfg.pkg = packageName(cfg.appName)
 	fmt.Println()
 
 	cleanup := func() {
@@ -80,6 +82,13 @@ func runScaffold(args []string) {
 		fatalf("Failed to resolve project path: %v", err)
 	}
 	cfg.dir = absDir
+
+	// 3.5 rewrite the template's app identity (package/module/imports) to the
+	//     project's package name before flutter create / go mod tidy run.
+	if err := parameterizeTemplate(cfg.dir, cfg.pkg, cfg.appName); err != nil {
+		cleanup()
+		fatalf("Failed to parameterise template: %v", err)
+	}
 
 	// 4. custom.mk (NDK auto-detection)
 	if err := setupCustomMk(cfg.dir); err != nil {
@@ -175,13 +184,9 @@ func toSlug(s string) string {
 }
 
 // templateSource returns the effective template source: the GODASH_TEMPLATE
-// override (or the deprecated FLAP_TEMPLATE alias) if set, otherwise the
-// built-in template embedded in the CLI.
+// override if set, otherwise the built-in template embedded in the CLI.
 func templateSource() string {
 	if s := os.Getenv("GODASH_TEMPLATE"); s != "" {
-		return s
-	}
-	if s := os.Getenv("FLAP_TEMPLATE"); s != "" {
 		return s
 	}
 	return embeddedTemplateSource
@@ -379,45 +384,107 @@ func pinGodashVersion(dir string) {
 
 func applyConfig(cfg scaffoldConfig) error {
 	return taskFn("Apply project configuration", func() error {
-		if err := replaceInFile(
-			filepath.Join(cfg.dir, "pubspec.yaml"),
-			`description: "flap"`, `description: "`+cfg.appName+`"`,
-		); err != nil {
-			return err
-		}
+		// The pubspec description was set by parameterizeTemplate; here we only
+		// replace the flutter-create defaults (derived from the package name)
+		// with the user's bundle id / display name.
 		_ = replaceInFile(
 			filepath.Join(cfg.dir, "android", "app", "build.gradle.kts"),
-			`namespace = "com.example.flap"`, `namespace = "`+cfg.bundleID+`"`,
+			`namespace = "com.example.`+cfg.pkg+`"`, `namespace = "`+cfg.bundleID+`"`,
 		)
 		_ = replaceInFile(
 			filepath.Join(cfg.dir, "android", "app", "build.gradle.kts"),
-			`applicationId = "com.example.flap"`, `applicationId = "`+cfg.bundleID+`"`,
+			`applicationId = "com.example.`+cfg.pkg+`"`, `applicationId = "`+cfg.bundleID+`"`,
 		)
 		_ = replaceInFile(
 			filepath.Join(cfg.dir, "android", "app", "src", "main", "AndroidManifest.xml"),
-			`android:label="flap"`, `android:label="`+cfg.appName+`"`,
+			`android:label="`+cfg.pkg+`"`, `android:label="`+cfg.appName+`"`,
 		)
+		// Replace every bundle id (Runner and RunnerTests) in one pass.
 		_ = replaceInFile(
 			filepath.Join(cfg.dir, "ios", "Runner.xcodeproj", "project.pbxproj"),
-			`PRODUCT_BUNDLE_IDENTIFIER = com.example.flap;`, `PRODUCT_BUNDLE_IDENTIFIER = `+cfg.bundleID+`;`,
+			`com.example.`+cfg.pkg, cfg.bundleID,
 		)
 		_ = replaceInFile(
 			filepath.Join(cfg.dir, "ios", "Runner", "Info.plist"),
-			`<string>Flap</string>`, `<string>`+cfg.appName+`</string>`,
+			`<string>`+upperFirst(cfg.pkg)+`</string>`, `<string>`+cfg.appName+`</string>`,
 		)
 		_ = replaceInFile(
 			filepath.Join(cfg.dir, "macos", "Runner", "Configs", "AppInfo.xcconfig"),
-			`PRODUCT_NAME = flap`, `PRODUCT_NAME = `+cfg.appName,
+			`PRODUCT_NAME = `+cfg.pkg, `PRODUCT_NAME = `+cfg.appName,
 		)
 		_ = replaceInFile(
 			filepath.Join(cfg.dir, "macos", "Runner", "Configs", "AppInfo.xcconfig"),
-			`PRODUCT_BUNDLE_IDENTIFIER = com.example.flap`, `PRODUCT_BUNDLE_IDENTIFIER = `+cfg.bundleID,
+			`PRODUCT_BUNDLE_IDENTIFIER = com.example.`+cfg.pkg, `PRODUCT_BUNDLE_IDENTIFIER = `+cfg.bundleID,
 		)
-		if err := renameAndroidPackage(cfg.dir, "com.example.flap", cfg.bundleID); err != nil {
+		if err := renameAndroidPackage(cfg.dir, "com.example."+cfg.pkg, cfg.bundleID); err != nil {
 			return err
 		}
 		return nil
 	})
+}
+
+// packageName derives a valid Dart/Go package identifier (lowercase) from a
+// display name, e.g. "My App" -> "myapp".
+func packageName(appName string) string {
+	p := toSlug(appName)
+	if p == "" || (p[0] >= '0' && p[0] <= '9') {
+		p = "app" + p
+	}
+	return p
+}
+
+// upperFirst uppercases the first ASCII letter of s.
+func upperFirst(s string) string {
+	if s == "" {
+		return s
+	}
+	r := []rune(s)
+	if r[0] >= 'a' && r[0] <= 'z' {
+		r[0] -= 'a' - 'A'
+	}
+	return string(r)
+}
+
+// appPackagePlaceholder is the app identity token used by the embedded
+// template. parameterizeTemplate rewrites it to the project's package name at
+// scaffold time.
+const appPackagePlaceholder = "godashapp"
+
+// parameterizeTemplate rewrites the scaffolded template's app identity
+// (pubspec name, Go module, proto go_package, Go/Dart imports) from the
+// template placeholder to the project's package name, and sets the pubspec
+// description to the display name.
+func parameterizeTemplate(dir, pkg, appName string) error {
+	replace := func(s string) string {
+		return strings.ReplaceAll(s, appPackagePlaceholder, pkg)
+	}
+	for _, rel := range []string{
+		filepath.Join("go", "go.mod"),
+		filepath.Join("go", "rpc", "echo_server.go"),
+		filepath.Join("go", "rpc", "calc_server.go"),
+		filepath.Join("proto", "echo.proto"),
+		filepath.Join("lib", "main.dart"),
+		filepath.Join("lib", "bridge", "bridge.dart"),
+	} {
+		p := filepath.Join(dir, rel)
+		b, err := os.ReadFile(p)
+		if err != nil {
+			continue // custom templates may not have this file
+		}
+		if err := os.WriteFile(p, []byte(replace(string(b))), 0o644); err != nil {
+			return err
+		}
+	}
+	pubspec := filepath.Join(dir, "pubspec.yaml")
+	if b, err := os.ReadFile(pubspec); err == nil {
+		out := string(b)
+		out = strings.ReplaceAll(out, "name: "+appPackagePlaceholder, "name: "+pkg)
+		out = strings.ReplaceAll(out, `description: "`+appPackagePlaceholder+`"`, `description: "`+appName+`"`)
+		if err := os.WriteFile(pubspec, []byte(out), 0o644); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // androidPackagePath converts a bundle id (a.b.c) to a source-relative path
@@ -429,7 +496,7 @@ func androidPackagePath(bundleID string) string {
 // renameAndroidPackage moves the generated Kotlin package from oldPkg to
 // newPkg and rewrites its package/import references.
 //
-// `flutter create` generates MainActivity at com.example.flap, and the Android
+// `flutter create` generates MainActivity at com.example.<pkg>, and the Android
 // manifest refers to it as ".MainActivity" (relative to the gradle namespace).
 // When applyConfig changes the namespace/applicationId to the user's bundle id,
 // the Kotlin source must move too, or the activity class cannot be found at

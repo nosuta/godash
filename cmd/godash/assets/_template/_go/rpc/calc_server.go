@@ -3,7 +3,7 @@ package rpc
 import (
 	"context"
 
-	flap "flap/pb"
+	godashapp "godashapp/pb"
 )
 
 // CalcServer implements CalcRPCHandler. Add is a hot-path method: on native it
@@ -11,6 +11,6 @@ import (
 // goes through the normal protobuf envelope.
 type CalcServer struct{}
 
-func (s *CalcServer) Add(ctx context.Context, req *flap.AddRequest) (*flap.AddResponse, error) {
-	return &flap.AddResponse{Sum: req.A + req.B}, nil
+func (s *CalcServer) Add(ctx context.Context, req *godashapp.AddRequest) (*godashapp.AddResponse, error) {
+	return &godashapp.AddResponse{Sum: req.A + req.B}, nil
 }

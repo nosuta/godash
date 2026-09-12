@@ -5,7 +5,74 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/nosuta/godash/v2/cmd/godash/assets"
 )
+
+func TestPackageName(t *testing.T) {
+	cases := map[string]string{
+		"My App":        "myapp",
+		"9lives":        "app9lives",
+		"":              "app",
+		"Hello World 1": "helloworld1",
+	}
+	for in, want := range cases {
+		if got := packageName(in); got != want {
+			t.Errorf("packageName(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// TestParameterizeTemplate guards that the embedded template's app identity
+// placeholder is rewritten to the project package name (pubspec name, Go
+// module, proto go_package, Go/Dart imports).
+func TestParameterizeTemplate(t *testing.T) {
+	dir := t.TempDir()
+	if err := assets.ExtractTemplate(dir); err != nil {
+		t.Fatalf("ExtractTemplate: %v", err)
+	}
+	if err := parameterizeTemplate(dir, "myapp", "My App"); err != nil {
+		t.Fatalf("parameterizeTemplate: %v", err)
+	}
+	checks := map[string]string{
+		"go/go.mod":             "module myapp",
+		"proto/echo.proto":      `go_package = "myapp/pb"`,
+		"go/rpc/echo_server.go": `myapp "myapp/pb"`,
+		"go/rpc/calc_server.go": `myapp "myapp/pb"`,
+		"lib/main.dart":         `package:myapp/`,
+	}
+	for rel, want := range checks {
+		b, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(rel)))
+		if err != nil {
+			t.Fatalf("read %s: %v", rel, err)
+		}
+		if !strings.Contains(string(b), want) {
+			t.Errorf("%s missing %q:\n%s", rel, want, string(b))
+		}
+	}
+	pub, _ := os.ReadFile(filepath.Join(dir, "pubspec.yaml"))
+	if !strings.Contains(string(pub), "name: myapp") {
+		t.Errorf("pubspec name not set: %q", string(pub))
+	}
+	if !strings.Contains(string(pub), `description: "My App"`) {
+		t.Errorf("pubspec description not set: %q", string(pub))
+	}
+	// The generated-client extension must stay `.godash.dart`, not inherit the
+	// app package name.
+	main, _ := os.ReadFile(filepath.Join(dir, "lib", "main.dart"))
+	if !strings.Contains(string(main), "pb/echo.godash.dart") {
+		t.Errorf("generated-client import was mangled: %q", string(main))
+	}
+	_ = filepath.Walk(dir, func(p string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
+			return nil
+		}
+		if b, _ := os.ReadFile(p); strings.Contains(string(b), appPackagePlaceholder) {
+			t.Errorf("%s still contains the app placeholder", p)
+		}
+		return nil
+	})
+}
 
 func TestToSlug(t *testing.T) {
 	cases := map[string]string{
@@ -45,15 +112,15 @@ func TestIsLocalPath(t *testing.T) {
 // ClassNotFoundException: ...MainActivity.
 func TestRenameAndroidPackage(t *testing.T) {
 	dir := t.TempDir()
-	oldFile := filepath.Join(dir, "android", "app", "src", "main", "kotlin", "com", "example", "flap", "MainActivity.kt")
+	oldFile := filepath.Join(dir, "android", "app", "src", "main", "kotlin", "com", "example", "godashapp", "MainActivity.kt")
 	if err := os.MkdirAll(filepath.Dir(oldFile), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(oldFile, []byte("package com.example.flap\n\nclass MainActivity\n"), 0o644); err != nil {
+	if err := os.WriteFile(oldFile, []byte("package com.example.godashapp\n\nclass MainActivity\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := renameAndroidPackage(dir, "com.example.flap", "com.acme.good"); err != nil {
+	if err := renameAndroidPackage(dir, "com.example.godashapp", "com.acme.good"); err != nil {
 		t.Fatalf("renameAndroidPackage: %v", err)
 	}
 	newFile := filepath.Join(dir, "android", "app", "src", "main", "kotlin", "com", "acme", "good", "MainActivity.kt")
@@ -77,7 +144,7 @@ func TestRewriteGodashVersion(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(dir, "go"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "go", "go.mod"), []byte("module flap\n\nrequire github.com/nosuta/godash/v2 v2.2.0\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "go", "go.mod"), []byte("module godashapp\n\nrequire github.com/nosuta/godash/v2 v2.2.0\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "pubspec.yaml"), []byte("dependencies:\n  godash: ^2.2.0\n  fixnum: ^1.1.1\n"), 0o644); err != nil {
@@ -152,6 +219,59 @@ func TestVersionString(t *testing.T) {
 	Version = "latest"
 	if got := versionString(); got == "" {
 		t.Error("versionString() must never be empty")
+	}
+}
+
+// TestApplyConfig guards the bundle-id / display-name rewrite against a
+// flutter-create tree for a project whose package name is parameterised.
+func TestApplyConfig(t *testing.T) {
+	dir := t.TempDir()
+	write := func(rel, content string) {
+		t.Helper()
+		p := filepath.Join(dir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("android/app/build.gradle.kts", "namespace = \"com.example.myapp\"\napplicationId = \"com.example.myapp\"\n")
+	write("android/app/src/main/AndroidManifest.xml", "android:label=\"myapp\"\n")
+	write("android/app/src/main/kotlin/com/example/myapp/MainActivity.kt", "package com.example.myapp\n\nclass MainActivity\n")
+	write("ios/Runner.xcodeproj/project.pbxproj", "PRODUCT_BUNDLE_IDENTIFIER = com.example.myapp;\nPRODUCT_BUNDLE_IDENTIFIER = com.example.myapp.RunnerTests;\n")
+	write("ios/Runner/Info.plist", "<key>CFBundleDisplayName</key>\n<string>Myapp</string>\n")
+	write("macos/Runner/Configs/AppInfo.xcconfig", "PRODUCT_NAME = myapp\nPRODUCT_BUNDLE_IDENTIFIER = com.example.myapp\n")
+
+	cfg := scaffoldConfig{dir: dir, appName: "Good App", pkg: "myapp", bundleID: "com.acme.good"}
+	if err := applyConfig(cfg); err != nil {
+		t.Fatalf("applyConfig: %v", err)
+	}
+	read := func(rel string) string {
+		t.Helper()
+		b, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(rel)))
+		if err != nil {
+			t.Fatalf("read %s: %v", rel, err)
+		}
+		return string(b)
+	}
+	if s := read("android/app/build.gradle.kts"); !strings.Contains(s, `namespace = "com.acme.good"`) || !strings.Contains(s, `applicationId = "com.acme.good"`) {
+		t.Errorf("gradle not updated: %q", s)
+	}
+	if s := read("android/app/src/main/AndroidManifest.xml"); !strings.Contains(s, `android:label="Good App"`) {
+		t.Errorf("manifest label not updated: %q", s)
+	}
+	if s := read("android/app/src/main/kotlin/com/acme/good/MainActivity.kt"); !strings.Contains(s, "package com.acme.good") {
+		t.Errorf("MainActivity not moved/rewritten: %q", s)
+	}
+	if s := read("ios/Runner.xcodeproj/project.pbxproj"); !strings.Contains(s, "PRODUCT_BUNDLE_IDENTIFIER = com.acme.good;") || !strings.Contains(s, "PRODUCT_BUNDLE_IDENTIFIER = com.acme.good.RunnerTests;") {
+		t.Errorf("ios bundle ids not updated: %q", s)
+	}
+	if s := read("ios/Runner/Info.plist"); !strings.Contains(s, "<string>Good App</string>") {
+		t.Errorf("ios display name not updated: %q", s)
+	}
+	if s := read("macos/Runner/Configs/AppInfo.xcconfig"); !strings.Contains(s, "PRODUCT_NAME = Good App") || !strings.Contains(s, "PRODUCT_BUNDLE_IDENTIFIER = com.acme.good") {
+		t.Errorf("macos config not updated: %q", s)
 	}
 }
 
@@ -249,7 +369,6 @@ func TestTemplateMetaRoundTrip(t *testing.T) {
 
 func TestTemplateSourceDefaultsToEmbedded(t *testing.T) {
 	t.Setenv("GODASH_TEMPLATE", "")
-	t.Setenv("FLAP_TEMPLATE", "")
 	if got := templateSource(); got != embeddedTemplateSource {
 		t.Fatalf("templateSource() = %q, want the embedded template", got)
 	}
@@ -264,7 +383,6 @@ func TestTemplateSourceDefaultsToEmbedded(t *testing.T) {
 // dotfiles present) without touching the network.
 func TestCloneEmbeddedTemplate(t *testing.T) {
 	t.Setenv("GODASH_TEMPLATE", "")
-	t.Setenv("FLAP_TEMPLATE", "")
 	dir := filepath.Join(t.TempDir(), "proj")
 	if err := cloneTemplate(scaffoldConfig{dir: dir}); err != nil {
 		t.Fatalf("cloneTemplate: %v", err)

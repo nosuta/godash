@@ -142,7 +142,7 @@ go/main*.go               # FFI exports (native) and worker entry (web)
 go/rpc/rpc_handler.go     # service dispatcher
 go/rpc/hot_handler.go     # packed hot-path dispatcher (native only)
 lib/pb/*.pb.dart          # protobuf messages
-lib/pb/*.flap.dart        # typed Dart clients / push / reverse handlers
+lib/pb/*.godash.dart        # typed Dart clients / push / reverse handlers
 lib/licenses/licenses.g.dart
 lib/version/version.dart
 web/*                     # worker assets, wasm_exec.js, sqlite wasm
@@ -161,7 +161,7 @@ See `cmd/godash/assets/_template/README.md` (embedded; also extracted into every
 
 ```
 Dart app
-  │  generated *RpcClient (lib/pb/*.flap.dart)
+  │  generated *RpcClient (lib/pb/*.godash.dart)
   ▼
 Transport (lib/bridge/transport.dart)
   │  unary / stream / hotRaw
@@ -355,8 +355,8 @@ Generators:
 
 | tool | output |
 |---|---|
-| `cmd/protoc-gen-go-godash` | `<file>.flap.go` (handler interface + router), `<file>.hot.go` (packed path) |
-| `cmd/protoc-gen-dart-godash` | `<file>.flap.dart` (typed client, push/reverse handlers) |
+| `cmd/protoc-gen-go-godash` | `<file>.godash.go` (handler interface + router), `<file>.hot.go` (packed path) |
+| `cmd/protoc-gen-dart-godash` | `<file>.godash.dart` (typed client, push/reverse handlers) |
 | `cmd/godash` | `go/main*.go`, `go/rpc/{rpc,hot}_handler.go` |
 | `cmd/gen_marshal_std` | `MarshalVT`/`UnmarshalVT` wrappers for standard Go |
 | `cmd/gen_go_build_version` | `lib/version/version.dart` |

@@ -29,7 +29,7 @@ mkdir -p go/pb
 # 1. Generate standard Go protobuf (for non-TinyGo)
 protoc -I=proto -I="$GODASH_MODULE_DIR/proto" \
   --plugin protoc-gen-go="$GOPATH_BIN/protoc-gen-go" \
-  --go_out=go --go_opt=module=flap proto/echo.proto
+  --go_out=go --go_opt=module="$GO_MODULE" proto/echo.proto
 
 # 2. Add build tag to standard Go files
 for f in go/pb/*.pb.go; do
@@ -46,12 +46,12 @@ done
 mkdir -p go/pb/tmp_std
 mv go/pb/*.pb.go go/pb/tmp_std/
 
-# 4. Generate Lite Go protobuf (for TinyGo) and godash Flap protobuf
+# 4. Generate Lite Go protobuf (for TinyGo) and godash protobuf
 protoc -I=proto -I="$GODASH_MODULE_DIR/proto" \
   --plugin protoc-gen-go-lite="$GOPATH_BIN/protoc-gen-go-lite" \
   --plugin protoc-gen-go-godash="$GOPATH_BIN/protoc-gen-go-godash" \
-  --go-lite_out=go --go-lite_opt=module=flap,features=marshal+unmarshal+size+equal+clone \
-  --go-godash_out=go --go-godash_opt=module=flap,core_pkg=github.com/nosuta/godash/v2/pb \
+  --go-lite_out=go --go-lite_opt=module="$GO_MODULE",features=marshal+unmarshal+size+equal+clone \
+  --go-godash_out=go --go-godash_opt=module="$GO_MODULE",core_pkg=github.com/nosuta/godash/v2/pb \
   proto/echo.proto
 
 # 5. Rename Lite files and add build tag

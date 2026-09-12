@@ -50,7 +50,7 @@ func TestExtractTemplate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read go/go.mod: %v", err)
 	}
-	if !strings.Contains(string(gomod), "module flap") {
+	if !strings.Contains(string(gomod), "module godashapp") {
 		t.Errorf("go/go.mod was not restored correctly: %q", string(gomod))
 	}
 	if _, err := os.Stat(filepath.Join(dst, "go", "go.mod.tmpl")); err == nil {

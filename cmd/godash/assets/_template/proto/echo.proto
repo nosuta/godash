@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package pb;
 
-option go_package = "flap/pb";
+option go_package = "godashapp/pb";
 
 import "godash/options.proto";
 

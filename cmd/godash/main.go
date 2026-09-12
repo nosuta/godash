@@ -93,8 +93,7 @@ extracts the project template embedded in the CLI and runs the initial
 prepare steps.
 
 Override the template source with the GODASH_TEMPLATE environment variable
-(local path or remote Git URL). FLAP_TEMPLATE is also accepted as a
-deprecated alias.`,
+(local path or remote Git URL).`,
 	},
 	"prepare": {
 		summary: "Initialize / regenerate project artifacts",

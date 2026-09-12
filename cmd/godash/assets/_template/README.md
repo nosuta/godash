@@ -70,7 +70,7 @@ The template does NOT vendor any godash source. Instead:
     embedded data into `<project>/web/`,
   - regenerates `go/main*.go`, `go/rpc/rpc_handler.go` and
     `go/rpc/hot_handler.go` from the discovered services in
-    `go/pb/*.flap.go`,
+    `go/pb/*.godash.go`,
   - runs `go-licenses` to produce `lib/licenses/licenses.g.dart`,
   - copies the `native_internal` plugin shell into `.godash/native_internal`
     and builds the Go native library for the target platform into it.
@@ -150,6 +150,3 @@ derived files and refresh `.godash/native_internal`.
 
 For path-replace projects (local development or a fork), it runs `git pull`
 in the declared godash checkout instead of the package upgrades.
-
-> The legacy `flap` command and `FLAP_TEMPLATE` environment variable
-> still work as aliases for backward compatibility.

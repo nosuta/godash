@@ -11,7 +11,7 @@ import (
 )
 
 // serviceInfo describes one gRPC-style service discovered in a generated
-// .flap.go file. It carries enough metadata to generate the wiring
+// .godash.go file. It carries enough metadata to generate the wiring
 // (rpc_handler.go, main*.go) without further AST analysis.
 type serviceInfo struct {
 	// Name is the short service name (e.g. "Echo"). It equals the type
@@ -30,10 +30,10 @@ type serviceInfo struct {
 
 // moduleInfo describes a Go module's name and its go/pb package alias.
 type moduleInfo struct {
-	// Name is the module name from go.mod (e.g. "flap").
+	// Name is the module name from go.mod (e.g. "godash").
 	Name string
 	// PbAlias is the import alias used in generated code for "<module>/pb"
-	// (e.g. "flappb" or just "flap" when unambiguous).
+	// (e.g. "godashpb" or just "godash" when unambiguous).
 	PbAlias string
 }
 
@@ -54,12 +54,12 @@ func readModuleName(dir string) (string, error) {
 	return "", fmt.Errorf("no module line in go.mod")
 }
 
-// scanServices parses go/pb/*.flap.go and returns the discovered services.
-// A .flap.go file (produced by protoc-gen-go-godash) declares a
+// scanServices parses go/pb/*.godash.go and returns the discovered services.
+// A .godash.go file (produced by protoc-gen-go-godash) declares a
 // "<Name>RPCHandler" interface and a "Handle<Name>RPC" function. We
 // extract both and derive the conventional server struct / var names.
 func scanServices(pbDir string) ([]serviceInfo, error) {
-	matches, err := filepath.Glob(filepath.Join(pbDir, "*.flap.go"))
+	matches, err := filepath.Glob(filepath.Join(pbDir, "*.godash.go"))
 	if err != nil {
 		return nil, err
 	}
@@ -440,12 +440,12 @@ import (
 	"github.com/nosuta/godash/v2/dart_api"
 	"github.com/nosuta/godash/v2/pb"
 	"github.com/nosuta/godash/v2/rpc"
-	flaprpc %q
+	godashrpc %q
 )
 
 func init() {
-	rpc.SetEntryPoint(flaprpc.EntryPoint)
-	rpc.SetHandleRPC(flaprpc.HandleRPCImpl)
+	rpc.SetEntryPoint(godashrpc.EntryPoint)
+	rpc.SetHandleRPC(godashrpc.HandleRPCImpl)
 }
 
 // main as exported functions
@@ -590,7 +590,7 @@ func renderHotExports(hot []hotInfo) string {
 		fmt.Fprintf(&b, `
 //export %s
 func %s(req unsafe.Pointer, resp unsafe.Pointer) C.int32_t {
-	if err := flaprpc.HotInvoke(context.Background(), %q, req, resp); err != nil {
+	if err := godashrpc.HotInvoke(context.Background(), %q, req, resp); err != nil {
 		return 1
 	}
 	return 0
@@ -611,12 +611,12 @@ package main
 import (
 	"github.com/nosuta/godash/v2/rpc"
 	"github.com/nosuta/godash/v2/web"
-	flaprpc %q
+	godashrpc %q
 )
 
 func init() {
-	rpc.SetEntryPoint(flaprpc.EntryPoint)
-	rpc.SetHandleRPC(flaprpc.HandleRPCImpl)
+	rpc.SetEntryPoint(godashrpc.EntryPoint)
+	rpc.SetHandleRPC(godashrpc.HandleRPCImpl)
 }
 
 func webWorker() {
@@ -667,14 +667,14 @@ package main
 import (
 	"log/slog"
 
-	flaprpc %q
+	godashrpc %q
 )
 
 // main as a web worker
 func main() {
 	slog.SetLogLoggerLevel(%s)
 	defer func() {
-		flaprpc.Close()
+		godashrpc.Close()
 		if r := recover(); r != nil {
 			slog.Error("main recovered from panic", "message", r)
 		}

@@ -15,15 +15,15 @@ func sampleHot() []hotInfo {
 }
 
 func TestRenderHotHandlerWithMethods(t *testing.T) {
-	got := renderHotHandler(moduleInfo{Name: "flap", PbAlias: "flappb"}, sampleHot())
+	got := renderHotHandler(moduleInfo{Name: "godash", PbAlias: "godashpb"}, sampleHot())
 	for _, want := range []string{
 		"//go:build !js",
 		"func HotInvoke(",
 		`case "CalcService_Add":`,
-		"flappb.GodashHot_CalcService_Add(ctx, calcServer, reqPtr, respPtr)",
+		"godashpb.GodashHot_CalcService_Add(ctx, calcServer, reqPtr, respPtr)",
 		`case "EchoService_Ping":`,
-		"flappb.GodashHot_EchoService_Ping(ctx, echoServer, reqPtr, respPtr)",
-		`flappb "flap/pb"`,
+		"godashpb.GodashHot_EchoService_Ping(ctx, echoServer, reqPtr, respPtr)",
+		`godashpb "godash/pb"`,
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("renderHotHandler missing %q\n---\n%s", want, got)
@@ -32,11 +32,11 @@ func TestRenderHotHandlerWithMethods(t *testing.T) {
 }
 
 func TestRenderHotHandlerWithoutMethods(t *testing.T) {
-	got := renderHotHandler(moduleInfo{Name: "flap", PbAlias: "flappb"}, nil)
+	got := renderHotHandler(moduleInfo{Name: "godash", PbAlias: "godashpb"}, nil)
 	if !strings.Contains(got, "//go:build !js") {
 		t.Errorf("missing build tag:\n%s", got)
 	}
-	if strings.Contains(got, "flap/pb") {
+	if strings.Contains(got, "godash/pb") {
 		t.Errorf("no hot methods should not import the project pb package:\n%s", got)
 	}
 	if !strings.Contains(got, `return fmt.Errorf("hot method not found: %s", name)`) {
@@ -45,25 +45,25 @@ func TestRenderHotHandlerWithoutMethods(t *testing.T) {
 }
 
 func TestRenderMainGoIncludesHotExports(t *testing.T) {
-	got := renderMainGo(moduleInfo{Name: "flap"}, sampleHot())
+	got := renderMainGo(moduleInfo{Name: "godash"}, sampleHot())
 	for _, want := range []string{
 		"//export CalcService_Add",
 		"func CalcService_Add(req unsafe.Pointer, resp unsafe.Pointer) C.int32_t",
-		`flaprpc.HotInvoke(context.Background(), "CalcService_Add", req, resp)`,
+		`godashrpc.HotInvoke(context.Background(), "CalcService_Add", req, resp)`,
 		"//export EchoService_Ping",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("renderMainGo missing %q", want)
 		}
 	}
-	plain := renderMainGo(moduleInfo{Name: "flap"}, nil)
+	plain := renderMainGo(moduleInfo{Name: "godash"}, nil)
 	if strings.Contains(plain, "//export CalcService_Add") {
 		t.Error("renderMainGo must not emit hot exports without hot methods")
 	}
 }
 
 func TestRenderMainGoZeroCopyRequest(t *testing.T) {
-	got := renderMainGo(moduleInfo{Name: "flap"}, nil)
+	got := renderMainGo(moduleInfo{Name: "godash"}, nil)
 	if strings.Contains(got, "C.GoBytes(") {
 		t.Error("renderMainGo must not copy the request via C.GoBytes (PLAN.md P4)")
 	}
@@ -80,10 +80,10 @@ func TestWriteWiringFilesIdempotent(t *testing.T) {
 	if err := os.MkdirAll(pbDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(goDir, "go.mod"), []byte("module flap\n\ngo 1.26.0\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(goDir, "go.mod"), []byte("module godash\n\ngo 1.26.0\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	flap := `package pb
+	godash := `package pb
 
 type CalcRPCHandler interface {
 	Add(ctx context.Context, req *AddRequest) (*AddResponse, error)
@@ -104,7 +104,7 @@ func GodashHot_CalcService_Add(ctx context.Context, handler CalcRPCHandler, reqP
 	return nil
 }
 `
-	if err := os.WriteFile(filepath.Join(pbDir, "calc.flap.go"), []byte(flap), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(pbDir, "calc.godash.go"), []byte(godash), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(pbDir, "calc.hot.go"), []byte(hot), 0o644); err != nil {
@@ -136,7 +136,7 @@ func GodashHot_CalcService_Add(ctx context.Context, handler CalcRPCHandler, reqP
 	mainGo := first["go/main.go"]
 	for _, want := range []string{
 		"//export CalcService_Add",
-		`flaprpc.HotInvoke(context.Background(), "CalcService_Add"`,
+		`godashrpc.HotInvoke(context.Background(), "CalcService_Add"`,
 		"unsafe.Slice((*byte)(payload.message)",
 	} {
 		if !strings.Contains(mainGo, want) {
@@ -168,7 +168,7 @@ func GodashHot_CalcService_Add(ctx context.Context, handler CalcRPCHandler, reqP
 // exactly one func main, otherwise the linker fails with
 // "function main is undeclared in the main package".
 func TestRenderMainJsVariantsComplementary(t *testing.T) {
-	mod := moduleInfo{Name: "flap"}
+	mod := moduleInfo{Name: "godash"}
 	debug := renderMainJsBuildVariant(mod, "debug")
 	release := renderMainJsBuildVariant(mod, "release")
 
@@ -182,8 +182,8 @@ func TestRenderMainJsVariantsComplementary(t *testing.T) {
 		if !strings.Contains(s, "func main()") {
 			t.Errorf("%s js variant is missing func main():\n%s", name, s)
 		}
-		if !strings.Contains(s, "flaprpc.Close()") {
-			t.Errorf("%s js variant must call flaprpc.Close() (the project entrypoint):\n%s", name, s)
+		if !strings.Contains(s, "godashrpc.Close()") {
+			t.Errorf("%s js variant must call godashrpc.Close() (the project entrypoint):\n%s", name, s)
 		}
 		if strings.Contains(s, "\trpc.Close()") {
 			t.Errorf("%s js variant references undefined rpc.Close():\n%s", name, s)

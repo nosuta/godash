@@ -19,7 +19,7 @@ func main() {
 	dir := os.Args[1]
 	fset := token.NewFileSet()
 	pkgs, err := parser.ParseDir(fset, dir, func(fi os.FileInfo) bool {
-		// Only parse standard .pb.go files, not lite or flap
+		// Only parse standard .pb.go files, not lite or godash
 		return strings.HasSuffix(fi.Name(), ".pb.go") && !strings.HasSuffix(fi.Name(), "_lite.go")
 	}, 0)
 

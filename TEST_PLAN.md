@@ -98,8 +98,8 @@ and the Dart shared-memory Node smoke.
 
 | id | priority | test | notes |
 |---|---|---|---|
-| C1 | P0 | `protoc-gen-go-godash`: golden output for `.flap.go` and `.hot.go` (handler iface, router, eligibility, empty messages, nil guard, `!js` tag, imports) | currently only manually verified |
-| C2 | P0 | `protoc-gen-dart-godash`: golden output for `.flap.dart` (unary/stream/hot, push/reverse handlers, `backpressure` param, options-import skip, conditional imports) | |
+| C1 | P0 | `protoc-gen-go-godash`: golden output for `.godash.go` and `.hot.go` (handler iface, router, eligibility, empty messages, nil guard, `!js` tag, imports) | currently only manually verified |
+| C2 | P0 | `protoc-gen-dart-godash`: golden output for `.godash.dart` (unary/stream/hot, push/reverse handlers, `backpressure` param, options-import skip, conditional imports) | |
 | C3 | P0 | Generate into a temp module and compile: `go build` the Go output, `dart analyze` the Dart output | end-to-end generation correctness |
 | C4 | P1 | `cmd/gen_marshal_std`: every message in `pb` gets `MarshalVT`/`UnmarshalVT` | G4 overlap |
 | C5 | P2 | `cmd/gen_go_build_version`: expected output format | |
@@ -183,7 +183,7 @@ Implemented in this pass:
 | G7 | `rpc/flow_test.go` | short/zero/negative credit payloads ignored |
 | G8 | `internal/hotlayout/hotlayout_test.go` | reject enum, oneof, proto3-optional, map |
 | L1 | `cmd/godash/build_scripts_test.go` | no `ffigen`/`exported.h` in any generated script; `%!` catches fmt-arg drift |
-| C1 | `cmd/protoc-gen-go-godash/main_test.go` | `.flap.go` handler/router, `.hot.go` build tag + pack/unpack, ineligible/absent-option fallback |
+| C1 | `cmd/protoc-gen-go-godash/main_test.go` | `.godash.go` handler/router, `.hot.go` build tag + pack/unpack, ineligible/absent-option fallback |
 | C2 | `cmd/protoc-gen-dart-godash/main_test.go` | unary/stream clients, `backpressure` param + import, hot wrapper, push handler, options-import skip |
 | D1/D2 | `test/integration/native_bridge_test.dart` | builds the c-shared backend and drives async RPC, `CallSync`, error response, packed hot export, allocator smoke |
 | D3 | `benchmark/bench` + `test/integration/native_bridge_test.dart` | block backpressure end-to-end: gated Go producer + credit control request through the real dylib |

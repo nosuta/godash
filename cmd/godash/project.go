@@ -13,9 +13,10 @@ import (
 type projectEnv struct {
 	Root              string // project root (working directory)
 	GodashPath        string // path to the godash repository (may be empty for version deps)
+	GoModule          string // Go module name from go/go.mod (e.g. "myapp")
 	NativeInternalDir string // resolved native_internal plugin directory
 	MaterializeNative bool   // copy native_internal from the godash module tree
-	LibName           string // e.g. libflap
+	LibName           string // e.g. libgodash
 	NDKPath           string // Android NDK path
 	IOSDeployment     string // iOS deployment target
 	MacosDeployment   string // macOS deployment target
@@ -55,6 +56,9 @@ func loadProjectEnvAt(dir, godashPathOverride string) (*projectEnv, error) {
 		XCFrameworkName: "native_internal.xcframework",
 	}
 	env.Unamr = runtime.GOOS
+	if m, err := readModuleName(cwd); err == nil {
+		env.GoModule = m
+	}
 
 	// core.env
 	coreEnv, err := readEnvFile(filepath.Join(cwd, "core.env"))
@@ -64,7 +68,7 @@ func loadProjectEnvAt(dir, godashPathOverride string) (*projectEnv, error) {
 	if v, ok := coreEnv["LIB_NAME"]; ok && v != "" {
 		env.LibName = v
 	} else {
-		env.LibName = "libflap"
+		env.LibName = "libgodash"
 	}
 
 	// custom.mk
@@ -124,7 +128,7 @@ func loadProjectEnvAt(dir, godashPathOverride string) (*projectEnv, error) {
 	// Resolve the native_internal plugin directory. Version-pinned projects
 	// use the project-local .godash/native_internal (materialised from the
 	// godash module); path-replace projects point straight at the checkout
-	// declared in pubspec.yaml. Native build outputs (libflap.so, libflap.a,
+	// declared in pubspec.yaml. Native build outputs (libgodash.so, libgodash.a,
 	// xcframework) are written there and Flutter resolves the plugin via the
 	// matching pubspec dependency.
 	nativeDir := filepath.Join(cwd, ".godash", "native_internal")

@@ -84,8 +84,8 @@ Notes:
 | `web/` | Go WASM worker entry (`RunWebWorker`) |
 | `pusher/`, `fetch/` | push function type; native/wasm fetch |
 | `cmd/godash/` | CLI, scaffold, build scripts, **wiring generation** (`wiring_gen.go`) |
-| `cmd/protoc-gen-go-godash/` | Go plugin: `<file>.flap.go`, `<file>.hot.go` |
-| `cmd/protoc-gen-dart-godash/` | Dart plugin: `<file>.flap.dart` |
+| `cmd/protoc-gen-go-godash/` | Go plugin: `<file>.godash.go`, `<file>.hot.go` |
+| `cmd/protoc-gen-dart-godash/` | Dart plugin: `<file>.godash.dart` |
 | `cmd/gen_marshal_std/`, `cmd/gen_go_build_version/` | small generators |
 | `lib/bridge/` | Dart bridge: `bridge*.dart`, `transport.dart`, `native_bytes.dart`, `native_library.dart` |
 | `packages/native_internal/` | Flutter plugin embedding the native `.so`/`.a`/xcframework |
@@ -204,13 +204,13 @@ preamble (`void* message; int size;`).
 
 1. `protoc-gen-go` → standard Go (`//go:build !js`)
 2. `protoc-gen-go-lite` → lite Go (`//go:build js`), renamed `*_lite.go`
-3. `protoc-gen-go-godash` → `<file>.flap.go` (shared) + `<file>.hot.go` (`!js`)
-4. `protoc-gen-dart-godash` → `<file>.flap.dart`
+3. `protoc-gen-go-godash` → `<file>.godash.go` (shared) + `<file>.hot.go` (`!js`)
+4. `protoc-gen-dart-godash` → `<file>.godash.dart`
 5. `cmd/gen_marshal_std` → `MarshalVT` wrappers
 6. `cmd/godash` wiring → `go/main*.go`, `go/rpc/{rpc,hot}_handler.go`
 
 Wiring scans go/pb:
-- services from `*.flap.go` (`<Name>RPCHandler` / `Handle<Name>RPC`)
+- services from `*.godash.go` (`<Name>RPCHandler` / `Handle<Name>RPC`)
 - hot methods from `*.hot.go`
   (`func GodashHot_<Service>_<Method>(ctx context.Context, handler <Iface>, reqPtr unsafe.Pointer, respPtr unsafe.Pointer) error`)
 

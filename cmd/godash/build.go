@@ -20,6 +20,7 @@ func envShell(e *projectEnv) string {
 	lines := []string{
 		export("GODASH_NATIVE_DIR", e.NativeInternalDir),
 		export("GODASH_MATERIALIZE_NATIVE", materialize),
+		export("GO_MODULE", e.GoModule),
 		export("LIB_NAME", e.LibName),
 		export("NDK_PATH", e.NDKPath),
 		export("IOS_DEPLOYMENT_TARGET", e.IOSDeployment),

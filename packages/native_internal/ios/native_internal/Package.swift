@@ -15,13 +15,13 @@ let package = Package(
     ],
     targets: [
         .binaryTarget(
-            name: "libflap",
+            name: "libgodash",
             path: "Frameworks/native_internal.xcframework"
         ),
         .target(
             name: "native_internal",
             dependencies: [
-                "libflap",
+                "libgodash",
                 .product(name: "FlutterFramework", package: "FlutterFramework")
             ],
             linkerSettings: [

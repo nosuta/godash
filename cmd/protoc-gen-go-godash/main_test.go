@@ -100,21 +100,21 @@ func TestGoPluginGeneratesHandlerAndHotFile(t *testing.T) {
 	files := generateGoFiles(t, buildGoRequest(t,
 		descriptorpb.FieldDescriptorProto_TYPE_INT32, true, true))
 
-	flap, ok := findSuffix(files, ".flap.go")
+	godash, ok := findSuffix(files, ".godash.go")
 	if !ok {
-		t.Fatalf("missing .flap.go; files: %v", keys(files))
+		t.Fatalf("missing .godash.go; files: %v", keys(files))
 	}
 	for _, want := range []string{
 		"type SRPCHandler interface",
 		"func HandleSRPC(",
 	} {
-		if !strings.Contains(flap, want) {
-			t.Errorf(".flap.go missing %q", want)
+		if !strings.Contains(godash, want) {
+			t.Errorf(".godash.go missing %q", want)
 		}
 	}
 	// The stream method must keep the channel-based handler signature.
-	if !strings.Contains(flap, "ch chan<- *core.Response") {
-		t.Errorf(".flap.go should contain the streaming handler signature:\n%s", flap)
+	if !strings.Contains(godash, "ch chan<- *core.Response") {
+		t.Errorf(".godash.go should contain the streaming handler signature:\n%s", godash)
 	}
 
 	hot, ok := findSuffix(files, ".hot.go")
@@ -140,7 +140,7 @@ func TestGoPluginSkipsIneligibleHotMethod(t *testing.T) {
 	if _, ok := findSuffix(files, ".hot.go"); ok {
 		t.Fatalf("ineligible hot method must not produce a .hot.go; files: %v", keys(files))
 	}
-	if _, ok := findSuffix(files, ".flap.go"); !ok {
+	if _, ok := findSuffix(files, ".godash.go"); !ok {
 		t.Fatalf("the service handler must still be generated; files: %v", keys(files))
 	}
 }
