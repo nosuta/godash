@@ -12,10 +12,10 @@ import (
 	"github.com/nosuta/godash/cmd/godash/assets"
 )
 
-// defaultTemplateRepo is the canonical starter template repository.
-// Override with the GODASH_TEMPLATE environment variable (local path or remote URL).
-// FLAP_TEMPLATE is also accepted as a deprecated alias.
-const defaultTemplateRepo = "https://github.com/nosuta/godash-starter"
+// embeddedTemplateSource marks the project template embedded in the CLI. It is
+// the default `godash new` source; GODASH_TEMPLATE (or the deprecated
+// FLAP_TEMPLATE) can override it with a local path or remote Git URL.
+const embeddedTemplateSource = "embedded"
 
 // scaffoldConfig captures the user-provided inputs for a new project.
 type scaffoldConfig struct {
@@ -64,9 +64,9 @@ func runScaffold(args []string) {
 		}
 	}
 
-	// 3. clone template
+	// 3. materialise the template (embedded by default, or GODASH_TEMPLATE)
 	if err := cloneTemplate(cfg); err != nil {
-		fatalf("Failed to clone template: %v", err)
+		fatalf("Failed to materialise template: %v", err)
 	}
 
 	// Resolve to an absolute path so downstream helpers always see an absolute
@@ -86,7 +86,7 @@ func runScaffold(args []string) {
 		fatalf("Failed to create custom.mk: %v", err)
 	}
 
-	// 5. git tracking: init repo, register godash remote, record template version
+	// 5. git tracking: init repo, record the godash dependency/version
 	if err := setupTemplateTracking(cfg.dir); err != nil {
 		cleanup()
 		fatalf("Failed to set up godash tracking: %v", err)
@@ -173,7 +173,9 @@ func toSlug(s string) string {
 	return regexp.MustCompile(`[^a-z0-9]+`).ReplaceAllString(s, "")
 }
 
-// templateSource returns the effective template source.
+// templateSource returns the effective template source: the GODASH_TEMPLATE
+// override (or the deprecated FLAP_TEMPLATE alias) if set, otherwise the
+// built-in template embedded in the CLI.
 func templateSource() string {
 	if s := os.Getenv("GODASH_TEMPLATE"); s != "" {
 		return s
@@ -181,7 +183,7 @@ func templateSource() string {
 	if s := os.Getenv("FLAP_TEMPLATE"); s != "" {
 		return s
 	}
-	return defaultTemplateRepo
+	return embeddedTemplateSource
 }
 
 // isLocalPath reports whether src looks like a local filesystem path.
@@ -192,6 +194,9 @@ func isLocalPath(src string) bool {
 // checkRemoteTag verifies that the given tag exists on the remote template repo.
 func checkRemoteTag(tag string) error {
 	src := templateSource()
+	if src == embeddedTemplateSource {
+		return fmt.Errorf("version %q requires GODASH_TEMPLATE; the built-in template ships with this CLI", tag)
+	}
 	if isLocalPath(src) {
 		return nil
 	}
@@ -210,6 +215,14 @@ func cloneTemplate(cfg scaffoldConfig) error {
 		return fmt.Errorf("directory %q already exists", cfg.dir)
 	}
 	src := templateSource()
+	if src == embeddedTemplateSource {
+		// Extract the template embedded in the CLI binary. There is no origin
+		// remote; setupTemplateTracking initialises git and records the godash
+		// dependency instead.
+		return taskFn("Extract built-in template", func() error {
+			return assets.ExtractTemplate(cfg.dir)
+		})
+	}
 	if isLocalPath(src) {
 		return copyLocalTemplate(src, cfg.dir)
 	}

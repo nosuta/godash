@@ -16,6 +16,16 @@ import (
 //go:embed web/*
 var webFS embed.FS
 
+// templateFS holds the default project scaffold. It is the canonical source
+// for `godash new`; GODASH_TEMPLATE can override it with a local or remote
+// alternative. The directory is named `_template` so the Go tool ignores it
+// (the scaffold contains its own go.mod, which would otherwise make it a
+// nested module and drop it from the embed); `all:` is required so dotfiles
+// like .gitignore are included.
+//
+//go:embed all:_template
+var templateFS embed.FS
+
 //go:embed tinygo_wasm_exec.js
 var tinygoWasmExecJS []byte
 
@@ -58,6 +68,49 @@ func ExtractWeb(projectRoot, appTitle string) error {
 // to <projectRoot>/web/wasm_exec.js.
 func WriteTinygoWasmExec(projectRoot string) error {
 	return os.WriteFile(filepath.Join(projectRoot, "web", "wasm_exec.js"), tinygoWasmExecJS, 0644)
+}
+
+// ExtractTemplate writes the embedded project template into dst, preserving
+// the directory tree and the executable bit of helper scripts. dst is created
+// if needed and must not already contain the project files.
+func ExtractTemplate(dst string) error {
+	return fs.WalkDir(templateFS, "_template", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if path == "_template" {
+			return os.MkdirAll(dst, 0755)
+		}
+		rel := strings.TrimPrefix(path, "_template/")
+		// Revert the storage-time renames: the `go` subtree is stored as `_go`
+		// (so the Go tool ignores it) and its go.mod as go.mod.tmpl (so go:embed
+		// does not treat the scaffold as a nested module and skip it).
+		rel = strings.TrimSuffix(rel, ".tmpl")
+		switch {
+		case rel == "_go":
+			rel = "go"
+		case strings.HasPrefix(rel, "_go/"):
+			rel = "go/" + strings.TrimPrefix(rel, "_go/")
+		}
+		target := filepath.Join(dst, filepath.FromSlash(rel))
+		if d.IsDir() {
+			return os.MkdirAll(target, 0755)
+		}
+		data, err := fs.ReadFile(templateFS, path)
+		if err != nil {
+			return err
+		}
+		if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
+			return err
+		}
+		// go:embed does not preserve file modes, so restore the executable
+		// bit for helper scripts.
+		mode := os.FileMode(0644)
+		if strings.HasSuffix(rel, ".sh") {
+			mode = 0o755
+		}
+		return os.WriteFile(target, data, mode)
+	})
 }
 
 // WriteScrollWorker writes the scroll_worker.js placeholder to

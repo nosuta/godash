@@ -129,3 +129,38 @@ func TestTemplateMetaRoundTrip(t *testing.T) {
 		t.Fatalf("unexpected partial meta: %+v", got)
 	}
 }
+
+func TestTemplateSourceDefaultsToEmbedded(t *testing.T) {
+	t.Setenv("GODASH_TEMPLATE", "")
+	t.Setenv("FLAP_TEMPLATE", "")
+	if got := templateSource(); got != embeddedTemplateSource {
+		t.Fatalf("templateSource() = %q, want the embedded template", got)
+	}
+	t.Setenv("GODASH_TEMPLATE", "/tmp/custom-template")
+	if got := templateSource(); got != "/tmp/custom-template" {
+		t.Fatalf("templateSource() = %q, want the GODASH_TEMPLATE override", got)
+	}
+}
+
+// TestCloneEmbeddedTemplate covers the default `godash new` source: cloneTemplate
+// must materialise the embedded scaffold (with the go module file restored and
+// dotfiles present) without touching the network.
+func TestCloneEmbeddedTemplate(t *testing.T) {
+	t.Setenv("GODASH_TEMPLATE", "")
+	t.Setenv("FLAP_TEMPLATE", "")
+	dir := filepath.Join(t.TempDir(), "proj")
+	if err := cloneTemplate(scaffoldConfig{dir: dir}); err != nil {
+		t.Fatalf("cloneTemplate: %v", err)
+	}
+	for _, rel := range []string{
+		".gitignore",
+		"pubspec.yaml",
+		"go/go.mod",
+		"go/rpc/echo_server.go",
+		"lib/main.dart",
+	} {
+		if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(rel))); err != nil {
+			t.Errorf("missing embedded template file %s: %v", rel, err)
+		}
+	}
+}

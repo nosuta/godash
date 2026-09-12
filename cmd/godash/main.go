@@ -89,7 +89,8 @@ var helpText = map[string]helpEntry{
 	"new": {
 		summary: "Scaffold a new project from a template",
 		body: `Interactively prompts for app name, directory, and bundle ID, then
-clones the godash starter template and runs the initial prepare steps.
+extracts the project template embedded in the CLI and runs the initial
+prepare steps.
 
 Override the template source with the GODASH_TEMPLATE environment variable
 (local path or remote Git URL). FLAP_TEMPLATE is also accepted as a

@@ -89,7 +89,7 @@ Notes:
 | `cmd/gen_marshal_std/`, `cmd/gen_go_build_version/` | small generators |
 | `lib/bridge/` | Dart bridge: `bridge*.dart`, `transport.dart`, `native_bytes.dart`, `native_library.dart` |
 | `packages/native_internal/` | Flutter plugin embedding the native `.so`/`.a`/xcframework |
-| `template/` | project scaffold (`godash new`) |
+| `cmd/godash/assets/_template/` | project scaffold embedded in the CLI (`godash new`) |
 | `benchmark/` | native + web latency harness; `RESULTS.md` |
 | `test/` | Dart tests |
 
@@ -220,6 +220,12 @@ output. `cmd/godash/wiring_gen_test.go` covers the wiring renderers.
 
 ## Gotchas (hard-won)
 
+- The embedded project scaffold lives in `cmd/godash/assets/_template/`. Its
+  `go` tree is stored as `_go/` with `go.mod.tmpl` because `go:embed` drops any
+  directory containing a nested `go.mod`, and `_`-prefixed dirs are ignored by
+  the Go build. `assets.ExtractTemplate` restores `_go` → `go` and
+  `go.mod.tmpl` → `go.mod` (covered by `assets_test.go`). `GODASH_TEMPLATE`
+  still accepts a local path or remote Git URL as an override.
 - `package:fixnum` exports an `Int32` class that **shadows `dart:ffi.Int32`**.
   Native FFI typedefs must use a prefixed `ffi.Int32` (see `bridge_native.dart`).
 - FFI native function typedefs must **not** have positional parameter names

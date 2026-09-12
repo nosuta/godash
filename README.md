@@ -85,7 +85,7 @@ cd my_app
 godash macos run            # or: godash ios / godash android apk / godash web run
 ```
 
-The template (`template/`) contains an example `EchoService` (envelope path) and
+The template (`cmd/godash/assets/_template/`, embedded in the CLI) contains an example `EchoService` (envelope path) and
 a `CalcService.Add` (hot path) so you can see both models in generated code.
 
 ### Everyday commands
@@ -132,7 +132,7 @@ web/*                     # worker assets, wasm_exec.js, sqlite wasm
 
 Your handlers (`go/rpc/*_server.go`) and `entrypoint.go` are preserved.
 
-See `template/README.md` for the full project layout.
+See `cmd/godash/assets/_template/README.md` (embedded; also extracted into every new project) for the full project layout.
 
 ---
 
@@ -330,7 +330,7 @@ hot exports are resolved the same way at first use.
 - `proto/core.proto` — the envelope (`Request`/`Response`/`Push`/…). Its wire
   format is a compatibility boundary: do not change field numbers or semantics.
 - `proto/godash/options.proto` — the `(godash.hot)` method option.
-- `template/proto/echo.proto` — example services for new projects.
+- `cmd/godash/assets/_template/proto/echo.proto` — example services for new projects.
 
 Generators:
 
@@ -406,8 +406,7 @@ pusher/ fetch/               push + wasm/native fetch helpers
 internal/hotlayout/          shared packed-layout computation
 lib/bridge/                  Dart bridge (native + web), transport, bindings
 packages/native_internal/    Flutter plugin that embeds the native library
-packages/web_internal/       web platform package
-template/                    project scaffold consumed by `godash new`
+cmd/godash/assets/_template/  embedded project scaffold consumed by `godash new`
 benchmark/                   native + web latency harness, RESULTS.md
 test/                        Dart tests
 ```

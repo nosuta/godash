@@ -8,14 +8,14 @@ import (
 )
 
 // templateMetaFile is the name of the project-local file that records which
-// godash template version (and from which remote) the project was created
-// from. It is committed so that `godash upgrade` can locate the matching
-// remote and compute a meaningful merge.
+// godash template/godash version the project was created from. It is committed
+// so `godash upgrade` has a known reference; upgrades pull the godash source
+// and regenerate derived files rather than merging template changes.
 const templateMetaFile = ".godash-template"
 
 // templateMeta holds the contents of .godash-template.
 type templateMeta struct {
-	Remote  string // e.g. https://github.com/nosuta/godash-starter
+	Remote  string // custom GODASH_TEMPLATE source; empty for the embedded template
 	Version string // ref name: branch (e.g. "main") or tag (e.g. "v1.0.0")
 	Commit  string // commit SHA the project was created at
 }
