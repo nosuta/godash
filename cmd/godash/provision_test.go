@@ -76,36 +76,30 @@ func TestProvisionGodashPathDep(t *testing.T) {
 	}
 }
 
-// TestProvisionGodashVersionDep verifies that a version-pinned project (no
-// local path dep) gets a source checkout in the cache and points GodashPath
-// there.
-func TestProvisionGodashVersionDep(t *testing.T) {
+// TestVersionDepNeedsNoCheckout verifies that a version-pinned project resolves
+// godash through the package managers: no source checkout is required, none is
+// created, and GodashPath is left empty.
+func TestVersionDepNeedsNoCheckout(t *testing.T) {
 	base := t.TempDir()
-	remote := makeFakeGodashRemote(t, base)
-
 	project := filepath.Join(base, "app")
 	if err := os.MkdirAll(project, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	writePubspecBody(t, project, "dependencies:\n  godash: ^1.2.0\n")
+	writePubspecBody(t, project, "dependencies:\n  godash: ^2.1.0\n")
 
-	cacheDir := filepath.Join(base, "cache")
-	t.Setenv("GODASH_REPO", remote)
+	t.Setenv("GODASH_REPO", filepath.Join(base, "does-not-exist"))
 	t.Setenv("GODASH_REF", "")
 	t.Setenv("GODASH_PATH", "")
-	t.Setenv("GODASH_CACHE_DIR", cacheDir)
-	t.Setenv("GODASH_NO_PROVISION", "")
 
 	env, err := loadProjectEnvAt(project, "")
 	if err != nil {
 		t.Fatalf("loadProjectEnvAt: %v", err)
 	}
-	want := filepath.Join(cacheDir, sanitizeRef(""))
-	if env.GodashPath != want {
-		t.Errorf("GodashPath = %q, want %q", env.GodashPath, want)
+	if env.GodashPath != "" {
+		t.Errorf("GodashPath = %q, want empty (no checkout needed)", env.GodashPath)
 	}
-	if !hasGodashModule(want) {
-		t.Errorf("expected a godash checkout at %s", want)
+	if _, err := os.Stat(filepath.Join(base, "godash")); err == nil {
+		t.Error("a checkout must not be created for a version dep")
 	}
 }
 

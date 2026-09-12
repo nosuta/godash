@@ -7,8 +7,10 @@ Worker on the web) through a single protobuf-enveloped transport, and gives you
 typed, code-generated clients, streaming, server push, reverse calls, a SQLite
 abstraction, and an opt-in zero-copy "hot path" for latency-critical calls.
 
-This package is intended for internal use and is **not published to pub.dev**.
-Projects depend on it via a local path (`godash: path: ../godash`).
+This package is published to pub.dev: projects depend on it as
+`godash: ^2.2.0` and on the Go module
+`github.com/nosuta/godash/v2`. No local source checkout is required.
+Local-development and fork workflows can still use a `path:` dependency.
 
 ---
 
@@ -111,19 +113,28 @@ godash doctor               # verify toolchain
 
 godash does **not** vendor its source into the project. Instead the project:
 
-- depends on `godash: path: ../godash` (and `native_internal`),
-- has `go.mod` with `replace github.com/nosuta/godash/v2 => ../../godash`,
+- depends on `godash: ^2.2.0` from pub.dev, and on the `native_internal`
+  Flutter plugin materialised at `.godash/native_internal`,
+- has `go.mod` requiring `github.com/nosuta/godash/v2` (no `replace`),
 - declares messages/services in `proto/*.proto`,
 - implements Go handlers in `go/rpc/*_server.go`,
 - calls the generated Dart clients from `lib/`.
 
-If the referenced godash source is missing, the CLI provisions it
-automatically: path-dep projects are cloned into the path declared in
-`pubspec.yaml`, and version-pinned projects get a cached checkout under the
-user cache directory (`GODASH_CACHE_DIR` overrides it). Set `GODASH_REPO` /
-`GODASH_REF` to select a fork or a specific branch, tag or commit, or
-`GODASH_NO_PROVISION=1` to disable it. A checkout found at the expected path is
-always used as-is and never overwritten.
+No local godash checkout is required. On every `godash prepare` / build the CLI
+resolves the godash source directory from the project's own Go module graph
+(`$GODASH_MODULE_DIR`), then:
+
+- builds the protoc plugins and `gen_marshal_std` from that module,
+- reads the shared `godash/options.proto` include from it,
+- copies its `packages/native_internal` plugin shell into
+  `.godash/native_internal` (a project-local, gitignored build crate that
+  `godash lib` writes the platform binaries into).
+
+Projects that consume godash via a `path:` dependency (local development or a
+fork) keep working: the CLI provisions the checkout automatically if it is
+missing. Set `GODASH_REPO` / `GODASH_REF` to select a fork or a specific
+branch, tag or commit, or `GODASH_NO_PROVISION=1` to disable it. A checkout
+found at the expected path is always used as-is and never overwritten.
 
 On every `godash prepare` / build, godash regenerates the godash-owned files:
 
@@ -136,6 +147,7 @@ lib/pb/*.flap.dart        # typed Dart clients / push / reverse handlers
 lib/licenses/licenses.g.dart
 lib/version/version.dart
 web/*                     # worker assets, wasm_exec.js, sqlite wasm
+.godash/native_internal/  # native plugin shell + built .so/.a/xcframework
 ```
 
 Your handlers (`go/rpc/*_server.go`) and `entrypoint.go` are preserved.

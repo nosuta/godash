@@ -44,9 +44,9 @@ func runUpgrade(args []string) {
 	fmt.Printf("Upgrading godash (dependency: %s %s) ...\n", depType, depValue)
 	fmt.Println()
 
-	// Resolve the complete project environment, including GodashPath. Building
-	// a bare &projectEnv{Root: cwd} leaves GodashPath empty, which makes the
-	// generation scripts resolve $GODASH_PATH/... against the filesystem root.
+	// Resolve the complete project environment. For path-replace projects this
+	// pins the godash checkout declared in pubspec.yaml; version-pinned
+	// projects need no checkout (godash comes from pub / the Go module cache).
 	env, err := resolveUpgradeEnv(cwd, depType, depValue)
 	if err != nil {
 		fatalf("could not resolve godash source: %v", err)
@@ -72,13 +72,9 @@ func runUpgrade(args []string) {
 		if err := runShellTask("Upgrade Flutter packages", cwd, "flutter pub upgrade godash native_internal"); err != nil {
 			os.Exit(1)
 		}
-		// The Dart/Go deps resolve from the package caches, but code
-		// generation uses the provisioned source checkout: keep it fresh.
-		if isGitRepo(env.GodashPath) {
-			fmt.Printf("Updating godash source in %s ...\n", env.GodashPath)
-			if err := pullGodashRepo(env.GodashPath); err != nil {
-				fmt.Fprintf(os.Stderr, "warning: could not pull godash repo: %v\n", err)
-			}
+		fmt.Println("Running `go get -u github.com/nosuta/godash/v2` ...")
+		if err := runShellTask("Upgrade Go module", cwd, "go -C go get -u github.com/nosuta/godash/v2"); err != nil {
+			os.Exit(1)
 		}
 	default:
 		fatalf("unknown godash dependency type: %s", depType)
@@ -130,8 +126,8 @@ func runUpgrade(args []string) {
 }
 
 // resolveUpgradeEnv loads the project environment used to regenerate derived
-// files during an upgrade. For path dependencies it forces the godash path
-// declared in pubspec.yaml, so $GODASH_PATH always points at a real checkout.
+// files during an upgrade. For path-replace dependencies it forces the godash
+// path declared in pubspec.yaml; version-pinned projects carry no checkout.
 func resolveUpgradeEnv(cwd, depType, depValue string) (*projectEnv, error) {
 	override := ""
 	if depType == "path" {

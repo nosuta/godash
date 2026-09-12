@@ -35,38 +35,7 @@ func godashProvisionDisabled() bool {
 	return false
 }
 
-// godashCacheRoot returns the per-user cache directory for godash checkouts
-// used by version-pinned projects. Override with GODASH_CACHE_DIR.
-func godashCacheRoot() string {
-	if dir := strings.TrimSpace(os.Getenv("GODASH_CACHE_DIR")); dir != "" {
-		return dir
-	}
-	if dir, err := os.UserCacheDir(); err == nil && dir != "" {
-		return filepath.Join(dir, "godash")
-	}
-	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		return filepath.Join(home, ".cache", "godash")
-	}
-	return filepath.Join(os.TempDir(), "godash-cache")
-}
-
-var (
-	gitSHAShortRe = regexp.MustCompile(`^[0-9a-f]{7,40}$`)
-	refUnsafeRe   = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
-)
-
-// sanitizeRef turns a git ref into a safe single path segment.
-func sanitizeRef(ref string) string {
-	ref = strings.TrimSpace(ref)
-	if ref == "" {
-		return "default"
-	}
-	out := strings.Trim(refUnsafeRe.ReplaceAllString(ref, "_"), "._-")
-	if out == "" {
-		return "default"
-	}
-	return out
-}
+var gitSHAShortRe = regexp.MustCompile(`^[0-9a-f]{7,40}$`)
 
 // hasGodashModule reports whether dir looks like a godash checkout.
 func hasGodashModule(dir string) bool {
@@ -112,15 +81,14 @@ func ensureGodashCheckout(target, repo, ref string) (string, error) {
 	return target, nil
 }
 
-// provisionGodash auto-creates a godash source checkout for the project so the
-// user does not have to place one manually. It returns the effective godash
-// path, or ("", nil) when the project has no godash dependency.
+// provisionGodash auto-creates the godash source checkout for a path-replace
+// project so the user does not have to place one manually. It returns the
+// effective godash path, or ("", nil) when the project has no path dependency.
 //
-// For path dependencies the checkout goes to the path declared in pubspec.yaml
-// so the pubspec `path:` and go.mod `replace` both resolve. For version-pinned
-// projects the checkout goes to the per-user cache: the Dart/Go dependencies
-// resolve from the package caches, but code generation still needs the tools
-// and `godash/options.proto` from a source tree.
+// The checkout goes to the path declared in pubspec.yaml so both the pubspec
+// `path:` and the go.mod `replace` resolve. Version-pinned projects do not
+// need a checkout (godash resolves through the package managers), so this is a
+// no-op for them.
 func provisionGodash(projectDir string) (string, error) {
 	pubspecPath := filepath.Join(projectDir, "pubspec.yaml")
 	if _, err := os.Stat(pubspecPath); err != nil {
@@ -130,26 +98,17 @@ func provisionGodash(projectDir string) (string, error) {
 	if err != nil {
 		return "", nil // no godash dependency to provision
 	}
-	if godashProvisionDisabled() {
+	if depType != "path" || godashProvisionDisabled() {
 		return "", nil
 	}
 
 	repo := godashRepo()
 	ref := godashRef()
 
-	if depType == "path" {
-		target := resolveGodashPath(projectDir, depValue)
-		if hasGodashModule(target) {
-			return target, nil
-		}
-		fmt.Printf("godash source not found at %s; cloning %s ...\n", target, repo)
-		return ensureGodashCheckout(target, repo, ref)
-	}
-
-	target := filepath.Join(godashCacheRoot(), sanitizeRef(ref))
+	target := resolveGodashPath(projectDir, depValue)
 	if hasGodashModule(target) {
 		return target, nil
 	}
-	fmt.Printf("Fetching godash source into %s ...\n", target)
+	fmt.Printf("godash source not found at %s; cloning %s ...\n", target, repo)
 	return ensureGodashCheckout(target, repo, ref)
 }

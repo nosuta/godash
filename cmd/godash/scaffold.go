@@ -303,8 +303,7 @@ func scaffoldPrepare(dir string) error {
 // go_js_wasm_exec and installs it. The scroll_worker.js content comes
 // from the embedded godash asset, not from the project tree.
 func scaffoldWasmTest(dir string) error {
-	env, err := loadProjectEnvAt(dir, "")
-	if err != nil {
+	if _, err := loadProjectEnvAt(dir, ""); err != nil {
 		return err
 	}
 	// Materialise the scroll worker placeholder so the wasm test runner
@@ -312,7 +311,7 @@ func scaffoldWasmTest(dir string) error {
 	if err := os.WriteFile(filepath.Join(dir, "web", "scroll_worker.js"), assets.ScrollWorkerJS(), 0644); err != nil {
 		return err
 	}
-	script := buildPrepareWasmTestScript(env)
+	script := buildPrepareWasmTestScript()
 	return runShellTask("Prepare Go wasm test", dir, script)
 }
 

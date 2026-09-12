@@ -1,0 +1,12 @@
+# Publish only the Dart library and package metadata. The Go sources,
+# generators, CLI, benchmarks, tests and the native_internal plugin are
+# consumed as the Go module (github.com/nosuta/godash/v2), not from pub.
+#
+# NOTE: when .pubignore exists, pub uses it INSTEAD OF .gitignore, so this
+# file must also exclude local build output (build/, .dart_tool/, ...).
+/*
+!/lib/
+!/pubspec.yaml
+!/LICENSE
+!/CHANGELOG.md
+!/README.md

@@ -7,24 +7,27 @@ import (
 
 // This file contains shell scripts that mirror the legacy Makefile targets.
 // They are embedded as Go strings and executed via `/bin/sh -c` by the build
-// subcommands. Variables in the scripts (e.g. $GODASH_PATH) are exported by
-// envShell() in build.go so the scripts can stay close to the original Makefile
-// form.
+// subcommands. $GODASH_MODULE_DIR (the resolved godash source directory) is
+// exported by godashModuleBootstrap() in this file.
 
 // protoGoScript returns the shell commands that regenerate Go protobuf code.
 // It mirrors the PROTO_GO macro from the Makefile.
+//
+// The godash tooling and the shared `godash/options.proto` are resolved from
+// the project's own Go module graph ($GODASH_MODULE_DIR, set by
+// godashModuleBootstrap), so no godash source checkout is required.
 func protoGoScript() string {
 	return `
 GOPATH_BIN="$(go env GOPATH)/bin"
 
-go install -C "$GODASH_PATH/cmd/protoc-gen-go-godash"
+go build -C go -o "$GOPATH_BIN/protoc-gen-go-godash" github.com/nosuta/godash/v2/cmd/protoc-gen-go-godash
 
 # 0. Clean
 rm -rf go/pb/*
 mkdir -p go/pb
 
 # 1. Generate standard Go protobuf (for non-TinyGo)
-protoc -I=proto -I="$GODASH_PATH/proto" \
+protoc -I=proto -I="$GODASH_MODULE_DIR/proto" \
   --plugin protoc-gen-go="$GOPATH_BIN/protoc-gen-go" \
   --go_out=go --go_opt=module=flap proto/echo.proto
 
@@ -44,7 +47,7 @@ mkdir -p go/pb/tmp_std
 mv go/pb/*.pb.go go/pb/tmp_std/
 
 # 4. Generate Lite Go protobuf (for TinyGo) and godash Flap protobuf
-protoc -I=proto -I="$GODASH_PATH/proto" \
+protoc -I=proto -I="$GODASH_MODULE_DIR/proto" \
   --plugin protoc-gen-go-lite="$GOPATH_BIN/protoc-gen-go-lite" \
   --plugin protoc-gen-go-godash="$GOPATH_BIN/protoc-gen-go-godash" \
   --go-lite_out=go --go-lite_opt=module=flap,features=marshal+unmarshal+size+equal+clone \
@@ -66,7 +69,7 @@ mv go/pb/tmp_std/*.pb.go go/pb/
 rmdir go/pb/tmp_std
 
 # 7. Generate MarshalVT wrappers for standard Go
-go run -C "$GODASH_PATH" ./cmd/gen_marshal_std "$PWD/go/pb"
+go run -C go github.com/nosuta/godash/v2/cmd/gen_marshal_std "$PWD/go/pb"
 `
 }
 
@@ -77,9 +80,9 @@ GOPATH_BIN="$(go env GOPATH)/bin"
 
 rm -rf lib/pb/*
 mkdir -p lib/pb
-go install -C "$GODASH_PATH/cmd/protoc-gen-dart-godash"
+go build -C go -o "$GOPATH_BIN/protoc-gen-dart-godash" github.com/nosuta/godash/v2/cmd/protoc-gen-dart-godash
 
-protoc -I=proto -I="$GODASH_PATH/proto" \
+protoc -I=proto -I="$GODASH_MODULE_DIR/proto" \
   --plugin protoc-gen-dart-godash="$GOPATH_BIN/protoc-gen-dart-godash" \
   --dart_out=lib/pb \
   --dart-godash_out=lib/pb \
@@ -143,7 +146,7 @@ flutter create -e --platforms=web .
 
 // buildScriptWebBuild returns the shell for `godash web build`.
 func buildScriptWebBuild(e *projectEnv) string {
-	return updateWebScript() + "\n" +
+	return goModBootstrap() + "\n" + updateWebScript() + "\n" +
 		protoGoScript() + "\n" +
 		protoDartScript() + "\n" +
 		wasmTinyGoScript() + "\n" +
@@ -153,7 +156,7 @@ func buildScriptWebBuild(e *projectEnv) string {
 
 // buildScriptWebRun returns the shell for `godash web run` (dev mode).
 func buildScriptWebRun(e *projectEnv) string {
-	return updateWebScript() + "\n" +
+	return goModBootstrap() + "\n" + updateWebScript() + "\n" +
 		protoGoScript() + "\n" +
 		protoDartScript() + "\n" +
 		wasmFullScript() + "\n" +
@@ -252,9 +255,9 @@ GOOS=js GOARCH=wasm tinygo build -C go -no-debug -panic=trap -opt=2 -o ../web/wo
 }
 
 // updateGoBuildVersionScript regenerates lib/version/version.dart using
-// the gen_go_build_version tool shipped inside the godash module.
+// the gen_go_build_version tool resolved from the project's Go module graph.
 func updateGoBuildVersionScript() string {
-	return `go run github.com/nosuta/godash/v2/cmd/gen_go_build_version lib/version/version.dart`
+	return `go run -C go github.com/nosuta/godash/v2/cmd/gen_go_build_version ../lib/version/version.dart`
 }
 
 // updateGoBuildVersionWebScript rewrites web/worker.js with a cache-busting
@@ -276,16 +279,26 @@ rm -rf /tmp/sqlite-wasm /tmp/sqlite-wasm.zip
 `
 }
 
-// prepareWasmTestScript copies sqlite3 / scroll_worker.js to godash and
-// installs go_js_wasm_exec.
-func prepareWasmTestScript(e *projectEnv) string {
-	return fmt.Sprintf(`
-cp web/sqlite3.js %s/cmd/go_js_wasm_exec/
-cp web/sqlite3.wasm %s/cmd/go_js_wasm_exec/
-cp web/sqlite3-opfs-async-proxy.js %s/cmd/go_js_wasm_exec/
-cp web/scroll_worker.js %s/cmd/go_js_wasm_exec/
-go install -C %s/cmd/go_js_wasm_exec
-`, e.GodashPath, e.GodashPath, e.GodashPath, e.GodashPath, e.GodashPath)
+// prepareWasmTestScript materialises the go_js_wasm_exec harness into
+// .godash/go_js_wasm_exec and installs it. The harness is a nested Go module,
+// so it only ships inside a path-replace checkout (a published module zip
+// excludes nested modules): when it is unavailable the step is skipped with a
+// notice so normal builds are unaffected.
+func prepareWasmTestScript() string {
+	return `
+HARNESS_SRC="$GODASH_MODULE_DIR/cmd/go_js_wasm_exec"
+if [ -d "$HARNESS_SRC" ]; then
+  mkdir -p .godash/go_js_wasm_exec
+  cp -R "$HARNESS_SRC/." .godash/go_js_wasm_exec/
+  cp web/sqlite3.js .godash/go_js_wasm_exec/
+  cp web/sqlite3.wasm .godash/go_js_wasm_exec/
+  cp web/sqlite3-opfs-async-proxy.js .godash/go_js_wasm_exec/
+  cp web/scroll_worker.js .godash/go_js_wasm_exec/
+  go build -C .godash/go_js_wasm_exec -o "$(go env GOPATH)/bin/go_js_wasm_exec" .
+else
+  echo "note: go_js_wasm_exec source not present (versioned godash module); skipping wasm test runner setup" >&2
+fi
+`
 }
 
 // dartAPIScript clones the Dart SDK and copies the C API headers into go/dart_api.
@@ -337,13 +350,38 @@ fi
 }
 
 // goModBootstrap returns the standard `go mod` preparation shell (tidy,
-// download, install tools, activate protoc plugin).
+// download, install tools, activate protoc plugin) followed by the godash
+// module resolution/materialisation step.
 func goModBootstrap() string {
 	return `
 dart pub global activate protoc_plugin
 go mod -C go tidy
 go -C go mod download
 go -C go install tool
+` + godashModuleBootstrap()
+}
+
+// godashModuleBootstrap resolves the godash source directory from the
+// project's own Go module graph and materialises the native_internal Flutter
+// plugin into the project-local .godash/ directory.
+//
+// GODASH_MODULE_DIR points at the module cache for a versioned dependency, or
+// at the local checkout for a path replace. Because the cache is read-only and
+// a published module zip excludes nested modules, everything the build needs
+// must be copied into the project: native_internal lives at
+// <module>/packages/native_internal (part of the module tree), while the
+// go_js_wasm_exec harness (a nested module) only exists for path replaces.
+func godashModuleBootstrap() string {
+	return `
+GODASH_MODULE_DIR="$(go -C go list -m -f '{{.Dir}}' github.com/nosuta/godash/v2)"
+if [ -z "$GODASH_MODULE_DIR" ]; then
+  echo "error: github.com/nosuta/godash/v2 is not in the Go module graph (run 'go mod tidy' in go/)" >&2
+  exit 1
+fi
+export GODASH_MODULE_DIR
+mkdir -p .godash/native_internal
+cp -R "$GODASH_MODULE_DIR/packages/native_internal/." .godash/native_internal/
+rm -rf .godash/native_internal/.dart_tool .godash/native_internal/pubspec.lock
 `
 }
 
@@ -359,8 +397,9 @@ func buildPrepareScript(e *projectEnv, createMissingPlatforms bool) string {
 
 // buildPrepareWasmTestScript downloads sqlite3 wasm assets (if missing) and
 // prepares the go_js_wasm_exec tool.
-func buildPrepareWasmTestScript(e *projectEnv) string {
+func buildPrepareWasmTestScript() string {
 	var b strings.Builder
+	b.WriteString(godashModuleBootstrap())
 	b.WriteString(`
 # Ensure sqlite3.js exists; download if missing
 if [ ! -f web/sqlite3.js ]; then
@@ -369,7 +408,7 @@ if [ ! -f web/sqlite3.js ]; then
 	b.WriteString(`
 fi
 `)
-	b.WriteString(prepareWasmTestScript(e))
+	b.WriteString(prepareWasmTestScript())
 	return b.String()
 }
 
@@ -380,13 +419,10 @@ rm -f web/wasm_exec.js
 rm -f web/sqlite3.js
 rm -f web/sqlite3-opfs-async-proxy.js
 rm -f web/sqlite3.wasm
-rm -f %s/cmd/go_js_wasm_exec/sqlite3.js
-rm -f %s/cmd/go_js_wasm_exec/sqlite3-opfs-async-proxy.js
-rm -f %s/cmd/go_js_wasm_exec/sqlite3.wasm
-rm -f %s/cmd/go_js_wasm_exec/wasm_exec.js
 rm -rf go/build/
 rm -rf go/pb/
 rm -rf lib/pb/
+rm -rf .godash/go_js_wasm_exec
 rm -rf %s/Headers
 rm -rf %s/Headers
 rm -rf %s
@@ -395,8 +431,7 @@ rm -f %s/x86_64/%s.so
 rm -f %s/arm64-v8a/%s.so
 rm -f lib/version/version.dart
 flutter clean
-`, e.GodashPath, e.GodashPath, e.GodashPath, e.GodashPath,
-		e.IOSPluginDir, e.MacosPluginDir, e.IOSFrameworkDir, e.MacosFrameworkDir,
+`, e.IOSPluginDir, e.MacosPluginDir, e.IOSFrameworkDir, e.MacosFrameworkDir,
 		e.AndroidPluginDir, e.LibName, e.AndroidPluginDir, e.LibName)
 }
 

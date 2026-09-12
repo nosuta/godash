@@ -162,13 +162,14 @@ refresh the godash dependency, then re-run prepare.
 
 Behaviour by dependency type (detected from pubspec.yaml):
   - "path: ../godash"  runs "git pull" in the godash dir, then regenerates
-  - "godash: ^1.2.0"   runs "flutter pub upgrade godash native_internal",
+  - "godash: ^2.2.0"   runs "flutter pub upgrade godash native_internal",
                        then "go get -u github.com/nosuta/godash/v2",
                        then regenerates
 
-If the godash source is missing it is provisioned automatically (clone into
-the declared path, or a cached checkout for version deps). Override the source
-with GODASH_REPO / GODASH_REF, or set GODASH_NO_PROVISION=1 to disable.
+If the godash source is missing and the project uses a "path:" dependency, it
+is provisioned automatically (cloned into the declared path). Version-pinned
+projects need no checkout at all. Override the source with GODASH_REPO /
+GODASH_REF, or set GODASH_NO_PROVISION=1 to disable provisioning.
 
 After upgrading, the regenerated files are committed automatically if
 the project is a git repository.`,

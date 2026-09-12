@@ -50,13 +50,14 @@ func loadProjectEnvAt(dir, godashPathOverride string) (*projectEnv, error) {
 		IOSDeployment:   "13.0",
 		MacosDeployment: "10.15",
 		MacosSDK:        "macosx",
-		// The native bridge plugin lives in the godash repo. Native build
-		// outputs (libflap.so, libflap.a, xcframework) are dropped here by
-		// the godash CLI; Flutter then picks them up via the
-		// path: ../godash/packages/native_internal dependency in pubspec.yaml.
-		IOSPluginDir:     filepath.Join("..", "godash", "packages", "native_internal", "ios"),
-		MacosPluginDir:   filepath.Join("..", "godash", "packages", "native_internal", "macos"),
-		AndroidPluginDir: filepath.Join("..", "godash", "packages", "native_internal", "android", "src", "main", "jniLibs"),
+		// The native_internal Flutter plugin is materialised project-local
+		// from the godash module tree (godashModuleBootstrap copies it from
+		// $GODASH_MODULE_DIR/packages/native_internal). Native build outputs
+		// (libflap.so, libflap.a, xcframework) are dropped there and Flutter
+		// picks them up via the path: .godash/native_internal dependency.
+		IOSPluginDir:     filepath.Join(".godash", "native_internal", "ios"),
+		MacosPluginDir:   filepath.Join(".godash", "native_internal", "macos"),
+		AndroidPluginDir: filepath.Join(".godash", "native_internal", "android", "src", "main", "jniLibs"),
 		XCFrameworkName:  "native_internal.xcframework",
 	}
 	env.IOSFrameworkDir = filepath.Join(env.IOSPluginDir, "native_internal", "Frameworks", env.XCFrameworkName)
@@ -99,7 +100,13 @@ func loadProjectEnvAt(dir, godashPathOverride string) (*projectEnv, error) {
 	if !filepath.IsAbs(env.GodashPath) {
 		env.GodashPath = filepath.Join(cwd, env.GodashPath)
 	}
-	if !hasGodashModule(env.GodashPath) {
+
+	// A local checkout is mandatory for path-replace projects (pubspec
+	// `path:` + go.mod `replace`), but optional for version-pinned ones:
+	// those resolve godash through the package managers and the build scripts
+	// locate the source dir via the Go module graph ($GODASH_MODULE_DIR).
+	depType, _, depErr := detectGodashDep(filepath.Join(cwd, "pubspec.yaml"))
+	if depErr == nil && depType == "path" && !hasGodashModule(env.GodashPath) {
 		// Auto-provision a checkout so the user does not have to place godash
 		// source manually. Overridable with GODASH_REPO / GODASH_REF and
 		// disableable with GODASH_NO_PROVISION=1.
@@ -112,7 +119,14 @@ func loadProjectEnvAt(dir, godashPathOverride string) (*projectEnv, error) {
 		}
 	}
 	if !hasGodashModule(env.GodashPath) {
-		return nil, fmt.Errorf("godash not found at %s (set GODASH_PATH, GODASH_REPO or update custom.mk)", env.GodashPath)
+		if depErr == nil && depType == "version" {
+			// Version-pinned project without a local checkout: not an error.
+			// The build scripts resolve the source dir from the Go module
+			// graph ($GODASH_MODULE_DIR).
+			env.GodashPath = ""
+		} else {
+			return nil, fmt.Errorf("godash not found at %s (set GODASH_PATH, GODASH_REPO or update custom.mk)", env.GodashPath)
+		}
 	}
 	return env, nil
 }

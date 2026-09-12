@@ -14,7 +14,6 @@ func envShell(e *projectEnv) string {
 		return "export " + k + "=" + shellQuote(v)
 	}
 	lines := []string{
-		export("GODASH_PATH", e.GodashPath),
 		export("LIB_NAME", e.LibName),
 		export("NDK_PATH", e.NDKPath),
 		export("IOS_DEPLOYMENT_TARGET", e.IOSDeployment),
@@ -179,14 +178,15 @@ func runLibCmd(args []string) {
 	if err != nil {
 		fatalf("%v", err)
 	}
+	prefix := envShell(env) + "\n" + godashModuleBootstrap() + "\n"
 	var script string
 	switch args[0] {
 	case "android":
-		script = envShell(env) + "\n" + buildScriptAndroidLibArm64(env) + "\n" + buildScriptAndroidLibX86_64(env)
+		script = prefix + buildScriptAndroidLibArm64(env) + "\n" + buildScriptAndroidLibX86_64(env)
 	case "ios":
-		script = envShell(env) + "\n" + buildScriptIOSLib(env)
+		script = prefix + buildScriptIOSLib(env)
 	case "macos":
-		script = envShell(env) + "\n" + buildScriptMacosLib(env)
+		script = prefix + buildScriptMacosLib(env)
 	default:
 		fmt.Fprintf(os.Stderr, "godash lib: unknown target %q\n", args[0])
 		os.Exit(1)
