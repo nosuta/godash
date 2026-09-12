@@ -69,6 +69,37 @@ func TestRenameAndroidPackage(t *testing.T) {
 	}
 }
 
+// TestRewriteGodashVersion guards that a scaffolded project is pinned to the
+// CLI's godash version in both pubspec.yaml and go/go.mod, so the Go module
+// (which supplies .godash/native_internal) matches the CLI.
+func TestRewriteGodashVersion(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "go"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "go", "go.mod"), []byte("module flap\n\nrequire github.com/nosuta/godash/v2 v2.2.0\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "pubspec.yaml"), []byte("dependencies:\n  godash: ^2.2.0\n  fixnum: ^1.1.1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := rewriteGodashVersion(dir, "v2.2.8"); err != nil {
+		t.Fatalf("rewriteGodashVersion: %v", err)
+	}
+	gomod, _ := os.ReadFile(filepath.Join(dir, "go", "go.mod"))
+	if !strings.Contains(string(gomod), "github.com/nosuta/godash/v2 v2.2.8") {
+		t.Errorf("go.mod not pinned: %q", string(gomod))
+	}
+	pub, _ := os.ReadFile(filepath.Join(dir, "pubspec.yaml"))
+	if !strings.Contains(string(pub), "godash: ^2.2.8") {
+		t.Errorf("pubspec not pinned: %q", string(pub))
+	}
+	if !strings.Contains(string(pub), "fixnum: ^1.1.1") {
+		t.Errorf("pubspec unrelated deps must be untouched: %q", string(pub))
+	}
+}
+
 func TestReplaceInFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "f.txt")

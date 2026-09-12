@@ -9,7 +9,7 @@ environment:
   flutter: ^3.41.0
 
 dependencies:
-  godash: ^2.2.0
+  godash: ^2.2.7
   native_internal:
     path: .godash/native_internal
 

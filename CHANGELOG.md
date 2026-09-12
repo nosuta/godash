@@ -1,3 +1,11 @@
+## 2.2.8
+
+* Pin newly scaffolded projects to the CLI's own godash version in both
+  `pubspec.yaml` and `go/go.mod`. The Go module supplies
+  `.godash/native_internal`, so a new project now gets the matching native
+  plugin fixes (e.g. the iOS force-link flags) instead of staying pinned to an
+  old template version.
+
 ## 2.2.7
 
 * Fix iOS/macOS calls failing with `Failed to lookup symbol

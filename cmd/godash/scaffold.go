@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime/debug"
 	"strings"
 
 	"github.com/nosuta/godash/v2/cmd/godash/assets"
@@ -316,6 +317,66 @@ func scaffoldWasmTest(dir string) error {
 	return runShellTask("Prepare Go wasm test", dir, script)
 }
 
+// cliVersion returns the module version this CLI was installed at (e.g.
+// "v2.2.8"), or "" when it cannot be determined (local `go build`/`go run`).
+func cliVersion() string {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return ""
+	}
+	v := info.Main.Version
+	if v == "" || v == "(devel)" || !strings.HasPrefix(v, "v") {
+		return ""
+	}
+	return v
+}
+
+var (
+	// godashRequireRe matches the godash Go module requirement line.
+	godashRequireRe = regexp.MustCompile(`github\.com/nosuta/godash/v2 v[0-9]+\.[0-9]+\.[0-9]+`)
+	// godashConstraintRe matches the pubspec `godash: ^X.Y.Z` constraint.
+	godashConstraintRe = regexp.MustCompile(`(?m)^(\s*godash:\s*\^)[0-9]+\.[0-9]+\.[0-9]+`)
+)
+
+// rewriteGodashVersion pins the project's godash Dart and Go dependencies to
+// version v (e.g. "v2.2.8"). Missing files are skipped.
+func rewriteGodashVersion(dir, v string) error {
+	semver := strings.TrimPrefix(v, "v")
+	gomod := filepath.Join(dir, "go", "go.mod")
+	if b, err := os.ReadFile(gomod); err == nil {
+		out := godashRequireRe.ReplaceAllString(string(b), "github.com/nosuta/godash/v2 "+v)
+		if err := os.WriteFile(gomod, []byte(out), 0o644); err != nil {
+			return err
+		}
+	}
+	pubspec := filepath.Join(dir, "pubspec.yaml")
+	if b, err := os.ReadFile(pubspec); err == nil {
+		out := godashConstraintRe.ReplaceAllString(string(b), "${1}"+semver)
+		if err := os.WriteFile(pubspec, []byte(out), 0o644); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// pinGodashVersion pins a freshly scaffolded version-pinned project to the
+// CLI's own version, so new projects always require the Go module that
+// contains the current native plugin fixes (the module supplies
+// .godash/native_internal). No-op for local dev builds (unknown version) or
+// path-replace project templates.
+func pinGodashVersion(dir string) {
+	v := cliVersion()
+	if v == "" {
+		return
+	}
+	if depType, _, err := detectGodashDep(filepath.Join(dir, "pubspec.yaml")); err != nil || depType != "version" {
+		return
+	}
+	if err := rewriteGodashVersion(dir, v); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: could not pin godash version: %v\n", err)
+	}
+}
+
 func applyConfig(cfg scaffoldConfig) error {
 	return taskFn("Apply project configuration", func() error {
 		if err := replaceInFile(
@@ -470,7 +531,10 @@ func setupTemplateTracking(dir string) error {
 		}
 	}
 
-	// 2. Inspect pubspec.yaml to record the godash dependency.
+	// 2. Pin the godash dependency to this CLI's version so the project gets
+	//    the matching Go module (and its native_internal plugin fixes), then
+	//    inspect pubspec.yaml to record the godash dependency.
+	pinGodashVersion(dir)
 	depType, depValue, err := detectGodashDep(filepath.Join(dir, "pubspec.yaml"))
 	if err != nil {
 		return fmt.Errorf("detect godash dep: %w", err)
