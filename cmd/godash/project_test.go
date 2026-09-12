@@ -80,3 +80,33 @@ func TestLoadProjectEnvMissingGodash(t *testing.T) {
 		t.Fatal("expected an error when the godash checkout is missing")
 	}
 }
+
+// TestResolveUpgradeEnvPathDep guards against the regression where `godash
+// upgrade` built a bare &projectEnv{Root: cwd}, leaving GodashPath empty so
+// the generation scripts resolved $GODASH_PATH/... against the filesystem
+// root.
+func TestResolveUpgradeEnvPathDep(t *testing.T) {
+	base := t.TempDir()
+	project := filepath.Join(base, "app")
+	godash := filepath.Join(base, "godash")
+	if err := os.MkdirAll(project, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(godash, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(godash, "go.mod"), []byte("module github.com/nosuta/godash/v2\n\ngo 1.26\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	env, err := resolveUpgradeEnv(project, "path", "../godash")
+	if err != nil {
+		t.Fatalf("resolveUpgradeEnv: %v", err)
+	}
+	if env.GodashPath != godash {
+		t.Errorf("GodashPath = %q, want %q", env.GodashPath, godash)
+	}
+	if env.Root != project {
+		t.Errorf("Root = %q, want %q", env.Root, project)
+	}
+}

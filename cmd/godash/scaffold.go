@@ -426,6 +426,11 @@ func setupTemplateTracking(dir string) error {
 	}
 	version := depValue
 	if depType == "path" {
+		// Provision the godash checkout if the user did not place one, so
+		// the recorded version has a real commit and prepare can run.
+		if _, err := resolveUpgradeEnv(dir, depType, depValue); err != nil {
+			return fmt.Errorf("provision godash: %w", err)
+		}
 		// Resolve to absolute and record the godash HEAD commit so
 		// future `godash upgrade` runs have a known reference.
 		godashDir := resolveGodashPath(dir, depValue)

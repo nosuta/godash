@@ -166,6 +166,10 @@ Behaviour by dependency type (detected from pubspec.yaml):
                        then "go get -u github.com/nosuta/godash/v2",
                        then regenerates
 
+If the godash source is missing it is provisioned automatically (clone into
+the declared path, or a cached checkout for version deps). Override the source
+with GODASH_REPO / GODASH_REF, or set GODASH_NO_PROVISION=1 to disable.
+
 After upgrading, the regenerated files are committed automatically if
 the project is a git repository.`,
 	},

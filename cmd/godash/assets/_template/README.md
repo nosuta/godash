@@ -61,7 +61,7 @@ The template does NOT vendor any godash source. Instead:
 
 - `pubspec.yaml` depends on `godash: path: ../godash` and
   `native_internal: path: ../godash/packages/native_internal`.
-- `go.mod` has `replace github.com/nosuta/godash/v2 => ../godash`.
+- `go.mod` has `replace github.com/nosuta/godash/v2 => ../../godash`.
 - On every `godash prepare` (and every build), godash:
   - extracts the web platform assets (index.html, worker.js, …) from
     embedded data into `<project>/web/`,
@@ -71,6 +71,12 @@ The template does NOT vendor any godash source. Instead:
   - runs `go-licenses` to produce `lib/licenses/licenses.g.dart`,
   - builds the Go native library for the target platform and drops
     the artifacts into godash's `packages/native_internal/`.
+
+The godash source at `../godash` is provisioned automatically if it is
+missing: the CLI clones it (path-dep projects clone into the declared path;
+version-pinned projects use a cached checkout). Override the source with
+`GODASH_REPO` / `GODASH_REF`, or set `GODASH_NO_PROVISION=1` to manage it
+yourself.
 
 This means **there is no template-level merge on upgrade**. To pick up
 new godash releases, run `godash upgrade` (or `cd ../godash && git pull &&

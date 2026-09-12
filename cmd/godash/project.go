@@ -11,20 +11,20 @@ import (
 
 // projectEnv holds resolved project context used by build scripts.
 type projectEnv struct {
-	Root             string // project root (working directory)
-	GodashPath       string // path to the godash repository
-	LibName          string // e.g. libflap
-	NDKPath          string // Android NDK path
-	IOSDeployment    string // iOS deployment target
-	MacosDeployment  string // macOS deployment target
-	MacosSDK         string // e.g. macosx
-	IOSPluginDir     string // relative to Root
-	MacosPluginDir   string // relative to Root
-	AndroidPluginDir string // relative to Root
-	XCFrameworkName  string
-	IOSFrameworkDir  string
+	Root              string // project root (working directory)
+	GodashPath        string // path to the godash repository
+	LibName           string // e.g. libflap
+	NDKPath           string // Android NDK path
+	IOSDeployment     string // iOS deployment target
+	MacosDeployment   string // macOS deployment target
+	MacosSDK          string // e.g. macosx
+	IOSPluginDir      string // relative to Root
+	MacosPluginDir    string // relative to Root
+	AndroidPluginDir  string // relative to Root
+	XCFrameworkName   string
+	IOSFrameworkDir   string
 	MacosFrameworkDir string
-	Unamr            string // `uname -s` for sed -i '' vs -i
+	Unamr             string // `uname -s` for sed -i '' vs -i
 }
 
 // loadProjectEnv resolves the project context from the current working
@@ -46,10 +46,10 @@ func loadProjectEnvAt(dir, godashPathOverride string) (*projectEnv, error) {
 	cwd := dir
 
 	env := &projectEnv{
-		Root:             cwd,
-		IOSDeployment:    "13.0",
-		MacosDeployment:  "10.15",
-		MacosSDK:         "macosx",
+		Root:            cwd,
+		IOSDeployment:   "13.0",
+		MacosDeployment: "10.15",
+		MacosSDK:        "macosx",
 		// The native bridge plugin lives in the godash repo. Native build
 		// outputs (libflap.so, libflap.a, xcframework) are dropped here by
 		// the godash CLI; Flutter then picks them up via the
@@ -99,8 +99,20 @@ func loadProjectEnvAt(dir, godashPathOverride string) (*projectEnv, error) {
 	if !filepath.IsAbs(env.GodashPath) {
 		env.GodashPath = filepath.Join(cwd, env.GodashPath)
 	}
-	if _, err := os.Stat(filepath.Join(env.GodashPath, "go.mod")); err != nil {
-		return nil, fmt.Errorf("godash not found at %s (set GODASH_PATH or update custom.mk)", env.GodashPath)
+	if !hasGodashModule(env.GodashPath) {
+		// Auto-provision a checkout so the user does not have to place godash
+		// source manually. Overridable with GODASH_REPO / GODASH_REF and
+		// disableable with GODASH_NO_PROVISION=1.
+		provisioned, perr := provisionGodash(cwd)
+		if perr != nil {
+			return nil, fmt.Errorf("godash not found at %s and auto-provision failed: %w", env.GodashPath, perr)
+		}
+		if provisioned != "" {
+			env.GodashPath = provisioned
+		}
+	}
+	if !hasGodashModule(env.GodashPath) {
+		return nil, fmt.Errorf("godash not found at %s (set GODASH_PATH, GODASH_REPO or update custom.mk)", env.GodashPath)
 	}
 	return env, nil
 }

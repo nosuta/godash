@@ -112,10 +112,18 @@ godash doctor               # verify toolchain
 godash does **not** vendor its source into the project. Instead the project:
 
 - depends on `godash: path: ../godash` (and `native_internal`),
-- has `go.mod` with `replace github.com/nosuta/godash/v2 => ../godash`,
+- has `go.mod` with `replace github.com/nosuta/godash/v2 => ../../godash`,
 - declares messages/services in `proto/*.proto`,
 - implements Go handlers in `go/rpc/*_server.go`,
 - calls the generated Dart clients from `lib/`.
+
+If the referenced godash source is missing, the CLI provisions it
+automatically: path-dep projects are cloned into the path declared in
+`pubspec.yaml`, and version-pinned projects get a cached checkout under the
+user cache directory (`GODASH_CACHE_DIR` overrides it). Set `GODASH_REPO` /
+`GODASH_REF` to select a fork or a specific branch, tag or commit, or
+`GODASH_NO_PROVISION=1` to disable it. A checkout found at the expected path is
+always used as-is and never overwritten.
 
 On every `godash prepare` / build, godash regenerates the godash-owned files:
 

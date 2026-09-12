@@ -44,10 +44,18 @@ func runUpgrade(args []string) {
 	fmt.Printf("Upgrading godash (dependency: %s %s) ...\n", depType, depValue)
 	fmt.Println()
 
+	// Resolve the complete project environment, including GodashPath. Building
+	// a bare &projectEnv{Root: cwd} leaves GodashPath empty, which makes the
+	// generation scripts resolve $GODASH_PATH/... against the filesystem root.
+	env, err := resolveUpgradeEnv(cwd, depType, depValue)
+	if err != nil {
+		fatalf("could not resolve godash source: %v", err)
+	}
+
 	var newCommit string
 	switch depType {
 	case "path":
-		godashDir := resolveGodashPath(cwd, depValue)
+		godashDir := env.GodashPath
 		if isGitRepo(godashDir) {
 			fmt.Printf("Updating godash source in %s ...\n", godashDir)
 			if err := pullGodashRepo(godashDir); err != nil {
@@ -63,6 +71,14 @@ func runUpgrade(args []string) {
 		fmt.Println("Running `flutter pub upgrade godash native_internal` ...")
 		if err := runShellTask("Upgrade Flutter packages", cwd, "flutter pub upgrade godash native_internal"); err != nil {
 			os.Exit(1)
+		}
+		// The Dart/Go deps resolve from the package caches, but code
+		// generation uses the provisioned source checkout: keep it fresh.
+		if isGitRepo(env.GodashPath) {
+			fmt.Printf("Updating godash source in %s ...\n", env.GodashPath)
+			if err := pullGodashRepo(env.GodashPath); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: could not pull godash repo: %v\n", err)
+			}
 		}
 	default:
 		fatalf("unknown godash dependency type: %s", depType)
@@ -80,10 +96,10 @@ func runUpgrade(args []string) {
 	// licenses) so they match the new godash.
 	fmt.Println()
 	fmt.Println("Regenerating derived files ...")
-	if err := runProtoAndWiring(&projectEnv{Root: cwd}); err != nil {
+	if err := runProtoAndWiring(env); err != nil {
 		fatalf("regenerate wiring: %v", err)
 	}
-	if err := runPrepareRefresh(cwd); err != nil {
+	if err := runPrepareRefresh(env); err != nil {
 		fatalf("regenerate derived files: %v", err)
 	}
 
@@ -113,18 +129,30 @@ func runUpgrade(args []string) {
 	}
 }
 
+// resolveUpgradeEnv loads the project environment used to regenerate derived
+// files during an upgrade. For path dependencies it forces the godash path
+// declared in pubspec.yaml, so $GODASH_PATH always points at a real checkout.
+func resolveUpgradeEnv(cwd, depType, depValue string) (*projectEnv, error) {
+	override := ""
+	if depType == "path" {
+		override = resolveGodashPath(cwd, depValue)
+	}
+	return loadProjectEnvAt(cwd, override)
+}
+
 // runPrepareRefresh re-runs the prepare step (proto, flutter create for
-// missing platforms, go-licenses) in cwd. It is a focused
+// missing platforms, go-licenses) in env.Root. It is a focused
 // subset of runPrepare used by godash upgrade.
-func runPrepareRefresh(cwd string) error {
+func runPrepareRefresh(env *projectEnv) error {
+	cwd := env.Root
 	licensesLine, cleanupLicenses := licensesTplExport()
 	defer cleanupLicenses()
 	_ = ensureWebAssets(cwd)
-	if err := runProtoAndWiring(&projectEnv{Root: cwd}); err != nil {
+	if err := runProtoAndWiring(env); err != nil {
 		return err
 	}
 	rest := licensesLine + applyGoLicensesScript() + "\n" + flutterCreateBlocks(true)
-	return runShellTask("Prepare environment (flutter create, licenses)", cwd, rest)
+	return runShellTask("Prepare environment (flutter create, licenses)", cwd, envShell(env)+"\n"+rest)
 }
 
 // godashInlineRe matches `  godash: <value>` (inline version constraint).
