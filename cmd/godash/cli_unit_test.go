@@ -137,6 +137,24 @@ sdks:
 	}
 }
 
+// TestVersionString guards the CLI version resolution: an explicit -ldflags
+// value wins; otherwise the installed module version (tag) is used, falling
+// back to "latest" for unversioned local builds.
+func TestVersionString(t *testing.T) {
+	old := Version
+	defer func() { Version = old }()
+
+	Version = "v9.9.9"
+	if got := versionString(); got != "v9.9.9" {
+		t.Errorf("explicit version = %q, want v9.9.9", got)
+	}
+
+	Version = "latest"
+	if got := versionString(); got == "" {
+		t.Error("versionString() must never be empty")
+	}
+}
+
 func TestReplaceInFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "f.txt")

@@ -22,6 +22,7 @@ Usage:
   godash upgrade                     Pull latest godash and regenerate derived files
   godash doctor                      Check required tools
   godash help                        Show this help
+  godash --version                   Print the godash version
 
 Run "godash help <subcommand>" for details on a specific subcommand.
 `
@@ -57,6 +58,8 @@ func main() {
 		runUpgrade(args[1:])
 	case "doctor":
 		runDoctorCmd()
+	case "--version", "-v", "version":
+		fmt.Println(versionString())
 	case "help", "-h", "--help":
 		printHelp(args[1:])
 	default:
@@ -74,7 +77,7 @@ func printHelp(args []string) {
 		}
 		fmt.Fprintf(os.Stderr, "godash: no help for %q\n", args[0])
 	}
-	fmt.Printf(usage, Version)
+	fmt.Printf(usage, versionString())
 }
 
 type helpEntry struct {

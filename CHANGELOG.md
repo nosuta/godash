@@ -1,3 +1,10 @@
+## 2.2.11
+
+* Show the real CLI version in `godash -h`: the installed Go module tag
+  (`go install ...@vX.Y.Z`) or the `-ldflags` value, instead of always
+  `latest`.
+* Add `godash --version` (also `-v` and `godash version`) to print the version.
+
 ## 2.2.10
 
 * Remove the obsolete `godash dart-api` command. The Dart C API headers are
