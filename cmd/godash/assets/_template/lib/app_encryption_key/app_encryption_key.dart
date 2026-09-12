@@ -10,7 +10,13 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 class AppEncryptionKey {
   static Future<String> key() async {
     const appEncryptionKey = 'aek';
-    const storage = FlutterSecureStorage();
+    // Use the file-based (legacy) keychain on macOS: the data-protection
+    // keychain requires the keychain-access-groups entitlement (and thus a
+    // development team), which breaks ad-hoc local debug builds. iOS/Android
+    // ignore mOptions.
+    const storage = FlutterSecureStorage(
+      mOptions: MacOsOptions(usesDataProtectionKeychain: false),
+    );
     String? aek;
     try {
       aek = await storage.read(key: appEncryptionKey);

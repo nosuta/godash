@@ -1,3 +1,10 @@
+## 2.2.5
+
+* Fix the macOS starter app keychain failure (`errSecMissingEntitlement`,
+  code -34018): `app_encryption_key.dart` now uses the file-based keychain
+  (`MacOsOptions(usesDataProtectionKeychain: false)`), so the app encryption
+  key can be stored with ad-hoc debug signing and no development team.
+
 ## 2.2.4
 
 * Fix the starter app on native platforms: `lib/main.dart` no longer evaluates
