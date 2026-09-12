@@ -382,7 +382,13 @@ fi
 export GODASH_MODULE_DIR
 if [ "$GODASH_MATERIALIZE_NATIVE" = "1" ]; then
   mkdir -p "$GODASH_NATIVE_DIR"
+  # Make any existing copy writable first (a previous run may have copied the
+  # read-only module cache modes), then copy, then unlock again.
+  chmod -R u+w "$GODASH_NATIVE_DIR" 2>/dev/null || true
   cp -R "$GODASH_MODULE_DIR/packages/native_internal/." "$GODASH_NATIVE_DIR/"
+  # cp preserves the module cache's read-only directory modes; the native build
+  # scripts must be able to mkdir/cp into the plugin afterwards.
+  chmod -R u+w "$GODASH_NATIVE_DIR"
   rm -rf "$GODASH_NATIVE_DIR/.dart_tool" "$GODASH_NATIVE_DIR/pubspec.lock"
 fi
 `

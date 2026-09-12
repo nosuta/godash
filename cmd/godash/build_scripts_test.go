@@ -67,6 +67,7 @@ func TestGodashModuleBootstrap(t *testing.T) {
 		"export GODASH_MODULE_DIR",
 		`GODASH_MATERIALIZE_NATIVE" = "1"`,
 		`cp -R "$GODASH_MODULE_DIR/packages/native_internal/." "$GODASH_NATIVE_DIR/"`,
+		`chmod -R u+w "$GODASH_NATIVE_DIR"`,
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("godashModuleBootstrap() missing %q:\n%s", want, s)

@@ -1,3 +1,14 @@
+## 2.2.2
+
+* Fix `godash web run`: a plain standard-Go wasm build had no `func main`
+  (the release variant was tagged `js && tinygo`). The js variants are now
+  complementary (`js && debug` / `js && !debug`), so `-tags`-less builds and
+  TinyGo each get exactly one `main`.
+* Fix native builds (e.g. `godash macos run`): the materialised
+  `.godash/native_internal` is now made writable. `cp -R` had preserved the
+  read-only directory modes of the Go module cache, so `mkdir`/`cp` inside
+  the plugin failed.
+
 ## 2.2.1
 
 * Fix native build output for path-replace projects: resolve the
