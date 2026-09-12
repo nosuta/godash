@@ -37,6 +37,16 @@ jobs:
         with:
           go-version: "1.26"
           cache-dependency-path: go.sum
+      - name: Prepare wasm test assets
+        run: |
+          # The wasmbrowsertest harness embeds the sqlite3 wasm assets and
+          # scroll_worker.js, which are gitignored and normally copied by
+          # `godash prepare_go_wasm_test`.
+          curl -fsSL -o /tmp/sqlite-wasm.zip https://sqlite.org/2026/sqlite-wasm-3530300.zip
+          unzip -q -o /tmp/sqlite-wasm.zip -d /tmp/sqlite-wasm
+          jswasm=/tmp/sqlite-wasm/sqlite-wasm-3530300/jswasm
+          cp "$jswasm/sqlite3.js" "$jswasm/sqlite3.wasm" "$jswasm/sqlite3-opfs-async-proxy.js" cmd/go_js_wasm_exec/
+          cp cmd/godash/assets/scroll_worker.js cmd/go_js_wasm_exec/
       - name: Install wasmbrowsertest harness
         run: |
           cd cmd/go_js_wasm_exec
