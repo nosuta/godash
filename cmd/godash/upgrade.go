@@ -88,20 +88,28 @@ func runUpgrade(args []string) {
 		os.Exit(1)
 	}
 
+	// For version-pinned projects report the version pub actually resolved:
+	// the pubspec value is a constraint (e.g. "^2.2.0"), not the package
+	// version.
+	label := depValue
+	if depType == "version" {
+		if v := readDartLockVersion(filepath.Join(cwd, "pubspec.lock"), "godash"); v != "" {
+			label = v
+		}
+	}
+
 	// Regenerate all godash-owned files (proto, wiring, web assets,
-	// licenses) so they match the new godash.
+	// licenses) so they match the new godash. runPrepareRefresh runs
+	// runProtoAndWiring itself.
 	fmt.Println()
 	fmt.Println("Regenerating derived files ...")
-	if err := runProtoAndWiring(env); err != nil {
-		fatalf("regenerate wiring: %v", err)
-	}
 	if err := runPrepareRefresh(env); err != nil {
 		fatalf("regenerate derived files: %v", err)
 	}
 
 	// Record the new version in .godash-template.
 	if err := writeTemplateMeta(cwd, &templateMeta{
-		Version: depValue,
+		Version: label,
 		Commit:  newCommit,
 	}); err != nil {
 		fatalf("write .godash-template: %v", err)
@@ -110,18 +118,18 @@ func runUpgrade(args []string) {
 	// Commit the regenerated tree if it's a git repo.
 	if isGitRepo(cwd) {
 		_, _ = gitRun(cwd, "add", "-A")
-		commitMsg := fmt.Sprintf("Upgrade godash to %s", depValue)
+		commitMsg := fmt.Sprintf("Upgrade godash to %s", label)
 		if newCommit != "" {
-			commitMsg = fmt.Sprintf("Upgrade godash to %s @ %s", depValue, shortSHA(newCommit))
+			commitMsg = fmt.Sprintf("Upgrade godash to %s @ %s", label, shortSHA(newCommit))
 		}
 		_ = gitCommitWithUser(cwd, commitMsg)
 	}
 
 	fmt.Println()
 	if newCommit != "" {
-		fmt.Printf("%s✓%s Upgraded godash to %s @ %s\n", colorGreen, colorReset, depValue, shortSHA(newCommit))
+		fmt.Printf("%s✓%s Upgraded godash to %s @ %s\n", colorGreen, colorReset, label, shortSHA(newCommit))
 	} else {
-		fmt.Printf("%s✓%s Upgraded godash to %s\n", colorGreen, colorReset, depValue)
+		fmt.Printf("%s✓%s Upgraded godash to %s\n", colorGreen, colorReset, label)
 	}
 }
 
@@ -273,6 +281,36 @@ func shortSHA(sha string) string {
 		return sha[:7]
 	}
 	return sha
+}
+
+// readDartLockVersion returns the resolved version of pkg from a pubspec.lock
+// (e.g. "2.2.8"), or "" if it cannot be found.
+func readDartLockVersion(lockPath, pkg string) string {
+	data, err := os.ReadFile(lockPath)
+	if err != nil {
+		return ""
+	}
+	lines := strings.Split(string(data), "\n")
+	start := -1
+	for i, l := range lines {
+		if l == "  "+pkg+":" {
+			start = i
+			break
+		}
+	}
+	if start < 0 {
+		return ""
+	}
+	for _, l := range lines[start+1:] {
+		// A new package key at 2-space indentation ends the block.
+		if strings.HasPrefix(l, "  ") && len(l) > 2 && l[2] != ' ' {
+			break
+		}
+		if strings.HasPrefix(l, "    version:") {
+			return strings.Trim(strings.TrimSpace(strings.TrimPrefix(l, "    version:")), `"`)
+		}
+	}
+	return ""
 }
 
 // suppress unused warnings for the legacy helpers removed from this file.

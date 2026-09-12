@@ -1,3 +1,10 @@
+## 2.2.9
+
+* `godash upgrade` now reports the resolved godash version (e.g. `2.2.8`)
+  instead of the pubspec constraint (e.g. `^2.2.0`), and records that version
+  in `.godash-template` and the commit message.
+* `godash upgrade` no longer runs protobuf generation twice.
+
 ## 2.2.8
 
 * Pin newly scaffolded projects to the CLI's own godash version in both
