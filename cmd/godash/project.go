@@ -12,7 +12,9 @@ import (
 // projectEnv holds resolved project context used by build scripts.
 type projectEnv struct {
 	Root              string // project root (working directory)
-	GodashPath        string // path to the godash repository
+	GodashPath        string // path to the godash repository (may be empty for version deps)
+	NativeInternalDir string // resolved native_internal plugin directory
+	MaterializeNative bool   // copy native_internal from the godash module tree
 	LibName           string // e.g. libflap
 	NDKPath           string // Android NDK path
 	IOSDeployment     string // iOS deployment target
@@ -50,18 +52,8 @@ func loadProjectEnvAt(dir, godashPathOverride string) (*projectEnv, error) {
 		IOSDeployment:   "13.0",
 		MacosDeployment: "10.15",
 		MacosSDK:        "macosx",
-		// The native_internal Flutter plugin is materialised project-local
-		// from the godash module tree (godashModuleBootstrap copies it from
-		// $GODASH_MODULE_DIR/packages/native_internal). Native build outputs
-		// (libflap.so, libflap.a, xcframework) are dropped there and Flutter
-		// picks them up via the path: .godash/native_internal dependency.
-		IOSPluginDir:     filepath.Join(".godash", "native_internal", "ios"),
-		MacosPluginDir:   filepath.Join(".godash", "native_internal", "macos"),
-		AndroidPluginDir: filepath.Join(".godash", "native_internal", "android", "src", "main", "jniLibs"),
-		XCFrameworkName:  "native_internal.xcframework",
+		XCFrameworkName: "native_internal.xcframework",
 	}
-	env.IOSFrameworkDir = filepath.Join(env.IOSPluginDir, "native_internal", "Frameworks", env.XCFrameworkName)
-	env.MacosFrameworkDir = filepath.Join(env.MacosPluginDir, "native_internal", "Frameworks", env.XCFrameworkName)
 	env.Unamr = runtime.GOOS
 
 	// core.env
@@ -128,6 +120,29 @@ func loadProjectEnvAt(dir, godashPathOverride string) (*projectEnv, error) {
 			return nil, fmt.Errorf("godash not found at %s (set GODASH_PATH, GODASH_REPO or update custom.mk)", env.GodashPath)
 		}
 	}
+
+	// Resolve the native_internal plugin directory. Version-pinned projects
+	// use the project-local .godash/native_internal (materialised from the
+	// godash module); path-replace projects point straight at the checkout
+	// declared in pubspec.yaml. Native build outputs (libflap.so, libflap.a,
+	// xcframework) are written there and Flutter resolves the plugin via the
+	// matching pubspec dependency.
+	nativeDir := filepath.Join(cwd, ".godash", "native_internal")
+	if p, nerr := nativeInternalPath(filepath.Join(cwd, "pubspec.yaml")); nerr == nil {
+		nativeDir = resolveGodashPath(cwd, p)
+	}
+	env.NativeInternalDir = nativeDir
+	checkoutPlugin := ""
+	if env.GodashPath != "" {
+		checkoutPlugin = filepath.Join(env.GodashPath, "packages", "native_internal")
+	}
+	env.MaterializeNative = filepath.Clean(nativeDir) != filepath.Clean(checkoutPlugin)
+	env.IOSPluginDir = filepath.Join(nativeDir, "ios")
+	env.MacosPluginDir = filepath.Join(nativeDir, "macos")
+	env.AndroidPluginDir = filepath.Join(nativeDir, "android", "src", "main", "jniLibs")
+	env.IOSFrameworkDir = filepath.Join(env.IOSPluginDir, "native_internal", "Frameworks", env.XCFrameworkName)
+	env.MacosFrameworkDir = filepath.Join(env.MacosPluginDir, "native_internal", "Frameworks", env.XCFrameworkName)
+
 	return env, nil
 }
 

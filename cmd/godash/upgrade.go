@@ -151,32 +151,28 @@ func runPrepareRefresh(env *projectEnv) error {
 	return runShellTask("Prepare environment (flutter create, licenses)", cwd, envShell(env)+"\n"+rest)
 }
 
-// godashInlineRe matches `  godash: <value>` (inline version constraint).
-var godashInlineRe = regexp.MustCompile(`(?m)^\s*godash:\s*(\S+)\s*$`)
-
-// godashBlockRe matches `  godash:` with no inline value (block form).
-var godashBlockRe = regexp.MustCompile(`(?m)^\s*godash:\s*$`)
-
 // pathRe matches `    path: <value>` inside a dep block.
 var pathRe = regexp.MustCompile(`(?m)^\s*path:\s*(\S+)\s*$`)
 
-// detectGodashDep inspects pubspec.yaml and returns the type and value
-// of the godash dependency. depType is "path" or "version".
-func detectGodashDep(pubspecPath string) (string, string, error) {
+// detectDep inspects pubspec.yaml and returns the type and value of the
+// dependency named key. depType is "path" or "version".
+func detectDep(pubspecPath, key string) (string, string, error) {
 	data, err := os.ReadFile(pubspecPath)
 	if err != nil {
 		return "", "", err
 	}
 	text := string(data)
-	if m := godashInlineRe.FindStringSubmatch(text); m != nil {
+	inlineRe := regexp.MustCompile(`(?m)^\s*` + regexp.QuoteMeta(key) + `:\s*(\S+)\s*$`)
+	blockRe := regexp.MustCompile(`(?m)^\s*` + regexp.QuoteMeta(key) + `:\s*$`)
+	if m := inlineRe.FindStringSubmatch(text); m != nil {
 		v := strings.Trim(m[1], `"'`)
 		if v != "" {
 			return "version", v, nil
 		}
 	}
-	loc := godashBlockRe.FindStringIndex(text)
+	loc := blockRe.FindStringIndex(text)
 	if loc == nil {
-		return "", "", fmt.Errorf("godash dependency not found in %s", pubspecPath)
+		return "", "", fmt.Errorf("%s dependency not found in %s", key, pubspecPath)
 	}
 	rest := text[loc[1]:]
 	// Look at the next few lines for `path:` or a nested version.
@@ -187,16 +183,34 @@ func detectGodashDep(pubspecPath string) (string, string, error) {
 		if m := pathRe.FindStringSubmatch(line); m != nil {
 			return "path", strings.Trim(m[1], `"'`), nil
 		}
-		// A nested non-indented key means the godash block ended.
+		// A nested non-indented key means the dep block ended.
 		if !strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "\t") && strings.TrimSpace(line) != "" {
 			break
 		}
-		// If a sibling key appears (e.g. `native_internal:`), stop.
+		// If a sibling key appears (e.g. another dependency), stop.
 		if strings.HasPrefix(line, "  ") && !strings.HasPrefix(line, "    ") && strings.Contains(line, ":") {
 			break
 		}
 	}
-	return "", "", fmt.Errorf("godash dependency is neither path nor version in %s", pubspecPath)
+	return "", "", fmt.Errorf("%s dependency is neither path nor version in %s", key, pubspecPath)
+}
+
+// detectGodashDep is detectDep for the `godash` dependency.
+func detectGodashDep(pubspecPath string) (string, string, error) {
+	return detectDep(pubspecPath, "godash")
+}
+
+// nativeInternalPath returns the project-relative `path:` value of the
+// `native_internal` dependency, or an error when it is not a path dependency.
+func nativeInternalPath(pubspecPath string) (string, error) {
+	depType, depValue, err := detectDep(pubspecPath, "native_internal")
+	if err != nil {
+		return "", err
+	}
+	if depType != "path" {
+		return "", fmt.Errorf("native_internal is not a path dependency")
+	}
+	return depValue, nil
 }
 
 // resolveGodashPath returns the absolute path to the godash checkout

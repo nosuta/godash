@@ -65,8 +65,8 @@ func TestGodashModuleBootstrap(t *testing.T) {
 	for _, want := range []string{
 		"go -C go list -m -f '{{.Dir}}' github.com/nosuta/godash/v2",
 		"export GODASH_MODULE_DIR",
-		".godash/native_internal",
-		`cp -R "$GODASH_MODULE_DIR/packages/native_internal/."`,
+		`GODASH_MATERIALIZE_NATIVE" = "1"`,
+		`cp -R "$GODASH_MODULE_DIR/packages/native_internal/." "$GODASH_NATIVE_DIR/"`,
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("godashModuleBootstrap() missing %q:\n%s", want, s)

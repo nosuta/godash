@@ -13,7 +13,13 @@ func envShell(e *projectEnv) string {
 	export := func(k, v string) string {
 		return "export " + k + "=" + shellQuote(v)
 	}
+	materialize := "0"
+	if e.MaterializeNative {
+		materialize = "1"
+	}
 	lines := []string{
+		export("GODASH_NATIVE_DIR", e.NativeInternalDir),
+		export("GODASH_MATERIALIZE_NATIVE", materialize),
 		export("LIB_NAME", e.LibName),
 		export("NDK_PATH", e.NDKPath),
 		export("IOS_DEPLOYMENT_TARGET", e.IOSDeployment),

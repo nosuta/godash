@@ -101,6 +101,50 @@ func TestVersionDepNeedsNoCheckout(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(base, "godash")); err == nil {
 		t.Error("a checkout must not be created for a version dep")
 	}
+	// The native plugin must go to the project-local .godash dir and be
+	// materialised from the module tree.
+	wantNative := filepath.Join(project, ".godash", "native_internal")
+	if env.NativeInternalDir != wantNative {
+		t.Errorf("NativeInternalDir = %q, want %q", env.NativeInternalDir, wantNative)
+	}
+	if !env.MaterializeNative {
+		t.Error("MaterializeNative should be true for a version dep")
+	}
+	if env.IOSPluginDir != filepath.Join(wantNative, "ios") {
+		t.Errorf("IOSPluginDir = %q", env.IOSPluginDir)
+	}
+}
+
+// TestPathDepNativeInternalInCheckout verifies backward compatibility: a
+// path-replace project keeps writing native build outputs into the checkout's
+// native_internal (the path Flutter resolves), and does not materialise a
+// project-local copy.
+func TestPathDepNativeInternalInCheckout(t *testing.T) {
+	base := t.TempDir()
+	project := filepath.Join(base, "app")
+	godash := filepath.Join(base, "godash")
+	if err := os.MkdirAll(project, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(godash, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(godash, "go.mod"), []byte("module github.com/nosuta/godash/v2\n\ngo 1.26\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writePubspecBody(t, project, "dependencies:\n  godash:\n    path: ../godash\n  native_internal:\n    path: ../godash/packages/native_internal\n")
+
+	env, err := loadProjectEnvAt(project, "")
+	if err != nil {
+		t.Fatalf("loadProjectEnvAt: %v", err)
+	}
+	wantNative := filepath.Join(godash, "packages", "native_internal")
+	if env.NativeInternalDir != wantNative {
+		t.Errorf("NativeInternalDir = %q, want %q", env.NativeInternalDir, wantNative)
+	}
+	if env.MaterializeNative {
+		t.Error("MaterializeNative should be false when native_internal points into the checkout")
+	}
 }
 
 // TestEnsureGodashCheckoutSHA verifies that an explicit commit ref is checked

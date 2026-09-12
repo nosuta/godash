@@ -363,7 +363,8 @@ go -C go install tool
 
 // godashModuleBootstrap resolves the godash source directory from the
 // project's own Go module graph and materialises the native_internal Flutter
-// plugin into the project-local .godash/ directory.
+// plugin into the project-local plugin directory (unless the project already
+// points native_internal straight at a path-replace checkout).
 //
 // GODASH_MODULE_DIR points at the module cache for a versioned dependency, or
 // at the local checkout for a path replace. Because the cache is read-only and
@@ -379,9 +380,11 @@ if [ -z "$GODASH_MODULE_DIR" ]; then
   exit 1
 fi
 export GODASH_MODULE_DIR
-mkdir -p .godash/native_internal
-cp -R "$GODASH_MODULE_DIR/packages/native_internal/." .godash/native_internal/
-rm -rf .godash/native_internal/.dart_tool .godash/native_internal/pubspec.lock
+if [ "$GODASH_MATERIALIZE_NATIVE" = "1" ]; then
+  mkdir -p "$GODASH_NATIVE_DIR"
+  cp -R "$GODASH_MODULE_DIR/packages/native_internal/." "$GODASH_NATIVE_DIR/"
+  rm -rf "$GODASH_NATIVE_DIR/.dart_tool" "$GODASH_NATIVE_DIR/pubspec.lock"
+fi
 `
 }
 
