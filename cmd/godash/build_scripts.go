@@ -144,17 +144,6 @@ flutter create -e --platforms=web .
 `
 }
 
-// buildScriptWebBuild returns the shell for `godash web build`.
-func buildScriptWebBuild(e *projectEnv) string {
-	return goModBootstrap() + "\n" + updateWebScript() + "\n" +
-		protoGoScript() + "\n" +
-		protoDartScript() + "\n" +
-		ensureSqliteWebAssetsScript() + "\n" +
-		wasmTinyGoScript() + "\n" +
-		applyGoLicensesScript() + "\n" +
-		`flutter build web --wasm --release`
-}
-
 // webDevCrossOriginHeaders are the cross-origin isolation headers the web dev
 // server must send so the SQLite (OPFS) path works: without them the page is not
 // cross-origin isolated and go-wasmsqlite fails with "OPFS is not supported".
@@ -162,14 +151,40 @@ func buildScriptWebBuild(e *projectEnv) string {
 // --web-header (key=value) so no project file is required.
 const webDevCrossOriginHeaders = `--web-header "Cross-Origin-Opener-Policy=same-origin" --web-header "Cross-Origin-Embedder-Policy=require-corp"`
 
+// webRunCommand is the flutter dev-server invocation used by `godash web run`.
+func webRunCommand() string {
+	return `flutter run -d web-server ` + webDevCrossOriginHeaders
+}
+
+// webBuildShell is the target-specific shell for `godash web build` (run after
+// protobuf generation + wiring): ensure the sqlite web assets, build the TinyGo
+// worker, generate licenses, then build the Flutter bundle.
+func webBuildShell() string {
+	return ensureSqliteWebAssetsScript() + "\n" +
+		wasmTinyGoScript() + "\n" +
+		applyGoLicensesScript() + "\n" +
+		`flutter build web --wasm --release`
+}
+
+// webRunShell is the target-specific shell for `godash web run` (run after
+// protobuf generation + wiring): ensure the sqlite web assets, build the Go
+// worker, then start the dev server with the cross-origin isolation headers.
+func webRunShell() string {
+	return ensureSqliteWebAssetsScript() + "\n" +
+		wasmFullScript() + "\n" +
+		webRunCommand()
+}
+
+// buildScriptWebBuild returns the shell for `godash web build`.
+func buildScriptWebBuild(e *projectEnv) string {
+	return goModBootstrap() + "\n" + updateWebScript() + "\n" +
+		protoShellScript() + "\n" + webBuildShell()
+}
+
 // buildScriptWebRun returns the shell for `godash web run` (dev mode).
 func buildScriptWebRun(e *projectEnv) string {
 	return goModBootstrap() + "\n" + updateWebScript() + "\n" +
-		protoGoScript() + "\n" +
-		protoDartScript() + "\n" +
-		ensureSqliteWebAssetsScript() + "\n" +
-		wasmFullScript() + "\n" +
-		`flutter run -d web-server ` + webDevCrossOriginHeaders
+		protoShellScript() + "\n" + webRunShell()
 }
 
 // buildScriptAndroidLibArm64 builds arm64-v8a shared lib.

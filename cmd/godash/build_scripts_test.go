@@ -87,8 +87,10 @@ func TestGodashModuleBootstrap(t *testing.T) {
 func TestWebScriptsProvideSqliteAssets(t *testing.T) {
 	e := sampleEnv()
 	for name, s := range map[string]string{
-		"web-build": buildScriptWebBuild(e),
-		"web-run":   buildScriptWebRun(e),
+		"web-build":       buildScriptWebBuild(e),
+		"web-run":         buildScriptWebRun(e),
+		"web-build-shell": webBuildShell(),
+		"web-run-shell":   webRunShell(),
 	} {
 		if !strings.Contains(s, "web/sqlite3.js") {
 			t.Errorf("%s must ensure the sqlite3 web assets are present:\n%s", name, s)
@@ -99,9 +101,9 @@ func TestWebScriptsProvideSqliteAssets(t *testing.T) {
 	}
 	// The dev server must be cross-origin isolated or web SQLite/OPFS fails
 	// with "OPFS is not supported".
-	if s := buildScriptWebRun(e); !strings.Contains(s, "Cross-Origin-Opener-Policy=same-origin") ||
+	if s := webRunShell(); !strings.Contains(s, "Cross-Origin-Opener-Policy=same-origin") ||
 		!strings.Contains(s, "Cross-Origin-Embedder-Policy=require-corp") {
-		t.Errorf("web-run must send cross-origin isolation headers:\n%s", s)
+		t.Errorf("web run must send cross-origin isolation headers:\n%s", s)
 	}
 	for name, s := range map[string]string{
 		"proto-go":   protoGoScript(),

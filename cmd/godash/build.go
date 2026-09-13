@@ -59,14 +59,14 @@ func runWeb(args []string) {
 	case "build":
 		licensesLine, cleanupLicenses := licensesTplExport()
 		defer cleanupLicenses()
-		// Web build needs proto done (already by runProtoAndWiring), the
-		// TinyGo worker, licenses, then flutter build.
-		script := envShell(env) + "\n" + licensesLine + wasmTinyGoScript() + "\n" + applyGoLicensesScript() + "\n" + `flutter build web --wasm --release`
+		// Proto + wiring are already done by runProtoAndWiring; webBuildShell
+		// adds the sqlite assets, the TinyGo worker, licenses and the bundle.
+		script := envShell(env) + "\n" + licensesLine + webBuildShell()
 		if err := runShellTask("Build for web", env.Root, script); err != nil {
 			os.Exit(1)
 		}
 	case "run":
-		script := envShell(env) + "\n" + wasmFullScript() + "\n" + `flutter run -d web-server`
+		script := envShell(env) + "\n" + webRunShell()
 		if err := runShellPipe(env.Root, script); err != nil {
 			fmt.Fprintf(os.Stderr, "web run exited with code %d\n", errExit(err))
 			os.Exit(errExit(err))

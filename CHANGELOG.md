@@ -1,3 +1,14 @@
+## 2.3.3
+
+* Fix `godash web run`/`godash web build` to use the shared web shell. 2.3.2
+  added the cross-origin isolation headers to `buildScriptWebRun`, but `godash
+  web run` composed its shell inline, so `flutter run` never received
+  `--web-header` and web SQLite still failed with
+  `failed to open database: OPFS is not supported`. The real command now sends
+  `Cross-Origin-Opener-Policy: same-origin` and
+  `Cross-Origin-Embedder-Policy: require-corp` (verified on the served page).
+* `godash web build` also ensures the sqlite3 web assets are downloaded.
+
 ## 2.3.2
 
 * Fix the SQLite demo on web: `godash web run` now starts the dev server with
