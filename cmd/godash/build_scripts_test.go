@@ -97,6 +97,12 @@ func TestWebScriptsProvideSqliteAssets(t *testing.T) {
 			t.Errorf("%s must download sqlite3.wasm:\n%s", name, s)
 		}
 	}
+	// The dev server must be cross-origin isolated or web SQLite/OPFS fails
+	// with "OPFS is not supported".
+	if s := buildScriptWebRun(e); !strings.Contains(s, "Cross-Origin-Opener-Policy=same-origin") ||
+		!strings.Contains(s, "Cross-Origin-Embedder-Policy=require-corp") {
+		t.Errorf("web-run must send cross-origin isolation headers:\n%s", s)
+	}
 	for name, s := range map[string]string{
 		"proto-go":   protoGoScript(),
 		"proto-dart": protoDartScript(),

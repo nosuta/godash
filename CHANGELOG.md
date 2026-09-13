@@ -1,3 +1,12 @@
+## 2.3.2
+
+* Fix the SQLite demo on web: `godash web run` now starts the dev server with
+  the cross-origin isolation headers (`Cross-Origin-Opener-Policy: same-origin`,
+  `Cross-Origin-Embedder-Policy: require-corp`) via `--web-header`, so OPFS is
+  available and the web database no longer fails with
+  `failed to open database: OPFS is not supported`. Production hosting already
+  got these from `web/_headers`.
+
 ## 2.3.1
 
 * `godash new` now scaffolds a working SQLite demo: a `CounterService`

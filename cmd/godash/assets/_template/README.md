@@ -40,7 +40,9 @@ stored value. The value survives native app restarts and web page reloads
 - web: `github.com/nosuta/go-wasmsqlite` + OPFS
 
 The web worker needs `web/sqlite3.js` and `web/sqlite3.wasm`; `godash web run`
-and `godash web build` download them automatically when missing.
+and `godash web build` download them automatically when missing. OPFS also
+requires cross-origin isolation, so `godash web run` sends the COOP/COEP
+headers (`web/_headers` does the same for production hosting).
 
 ## Build with the `godash` CLI
 

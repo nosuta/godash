@@ -155,6 +155,13 @@ func buildScriptWebBuild(e *projectEnv) string {
 		`flutter build web --wasm --release`
 }
 
+// webDevCrossOriginHeaders are the cross-origin isolation headers the web dev
+// server must send so the SQLite (OPFS) path works: without them the page is not
+// cross-origin isolated and go-wasmsqlite fails with "OPFS is not supported".
+// Production hosting gets the same headers from web/_headers. Passed as
+// --web-header (key=value) so no project file is required.
+const webDevCrossOriginHeaders = `--web-header "Cross-Origin-Opener-Policy=same-origin" --web-header "Cross-Origin-Embedder-Policy=require-corp"`
+
 // buildScriptWebRun returns the shell for `godash web run` (dev mode).
 func buildScriptWebRun(e *projectEnv) string {
 	return goModBootstrap() + "\n" + updateWebScript() + "\n" +
@@ -162,7 +169,7 @@ func buildScriptWebRun(e *projectEnv) string {
 		protoDartScript() + "\n" +
 		ensureSqliteWebAssetsScript() + "\n" +
 		wasmFullScript() + "\n" +
-		`flutter run -d web-server`
+		`flutter run -d web-server ` + webDevCrossOriginHeaders
 }
 
 // buildScriptAndroidLibArm64 builds arm64-v8a shared lib.
