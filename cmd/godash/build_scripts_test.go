@@ -79,6 +79,34 @@ func TestGodashModuleBootstrap(t *testing.T) {
 	}
 }
 
+// TestWebScriptsProvideSqliteAssets guards the SQLite web contract: the web
+// worker importScripts()es sqlite3.js and go-wasmsqlite loads sqlite3.wasm, so
+// every web build/run must download them into web/ when missing. It also guards
+// that protoc runs over every proto file (not just echo.proto), so a project can
+// add services without editing godash-owned scripts.
+func TestWebScriptsProvideSqliteAssets(t *testing.T) {
+	e := sampleEnv()
+	for name, s := range map[string]string{
+		"web-build": buildScriptWebBuild(e),
+		"web-run":   buildScriptWebRun(e),
+	} {
+		if !strings.Contains(s, "web/sqlite3.js") {
+			t.Errorf("%s must ensure the sqlite3 web assets are present:\n%s", name, s)
+		}
+		if !strings.Contains(s, "sqlite3.wasm") {
+			t.Errorf("%s must download sqlite3.wasm:\n%s", name, s)
+		}
+	}
+	for name, s := range map[string]string{
+		"proto-go":   protoGoScript(),
+		"proto-dart": protoDartScript(),
+	} {
+		if !strings.Contains(s, "proto/*.proto") {
+			t.Errorf("%s must glob all proto files, not just echo.proto:\n%s", name, s)
+		}
+	}
+}
+
 // TestPrepareEntitlementsAvoidRestrictedKeychain guards macOS/iOS debug runs:
 // the empty keychain-access-groups entitlement is a restricted entitlement that
 // forces a development certificate, and the darwin plugin ignores access groups

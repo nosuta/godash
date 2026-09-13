@@ -349,7 +349,8 @@ hot exports are resolved the same way at first use.
 - `proto/core.proto` — the envelope (`Request`/`Response`/`Push`/…). Its wire
   format is a compatibility boundary: do not change field numbers or semantics.
 - `proto/godash/options.proto` — the `(godash.hot)` method option.
-- `cmd/godash/assets/_template/proto/echo.proto` — example services for new projects.
+- `cmd/godash/assets/_template/proto/*.proto` — example services for new projects
+  (echo/stream + hot path, and a SQLite-backed counter).
 
 Generators:
 

@@ -29,7 +29,7 @@ mkdir -p go/pb
 # 1. Generate standard Go protobuf (for non-TinyGo)
 protoc -I=proto -I="$GODASH_MODULE_DIR/proto" \
   --plugin protoc-gen-go="$GOPATH_BIN/protoc-gen-go" \
-  --go_out=go --go_opt=module="$GO_MODULE" proto/echo.proto
+  --go_out=go --go_opt=module="$GO_MODULE" proto/*.proto
 
 # 2. Add build tag to standard Go files
 for f in go/pb/*.pb.go; do
@@ -52,7 +52,7 @@ protoc -I=proto -I="$GODASH_MODULE_DIR/proto" \
   --plugin protoc-gen-go-godash="$GOPATH_BIN/protoc-gen-go-godash" \
   --go-lite_out=go --go-lite_opt=module="$GO_MODULE",features=marshal+unmarshal+size+equal+clone \
   --go-godash_out=go --go-godash_opt=module="$GO_MODULE",core_pkg=github.com/nosuta/godash/v2/pb \
-  proto/echo.proto
+  proto/*.proto
 
 # 5. Rename Lite files and add build tag
 for f in go/pb/*.pb.go; do
@@ -86,7 +86,7 @@ protoc -I=proto -I="$GODASH_MODULE_DIR/proto" \
   --plugin protoc-gen-dart-godash="$GOPATH_BIN/protoc-gen-dart-godash" \
   --dart_out=lib/pb \
   --dart-godash_out=lib/pb \
-  proto/echo.proto
+  proto/*.proto
 `
 }
 
@@ -149,6 +149,7 @@ func buildScriptWebBuild(e *projectEnv) string {
 	return goModBootstrap() + "\n" + updateWebScript() + "\n" +
 		protoGoScript() + "\n" +
 		protoDartScript() + "\n" +
+		ensureSqliteWebAssetsScript() + "\n" +
 		wasmTinyGoScript() + "\n" +
 		applyGoLicensesScript() + "\n" +
 		`flutter build web --wasm --release`
@@ -159,6 +160,7 @@ func buildScriptWebRun(e *projectEnv) string {
 	return goModBootstrap() + "\n" + updateWebScript() + "\n" +
 		protoGoScript() + "\n" +
 		protoDartScript() + "\n" +
+		ensureSqliteWebAssetsScript() + "\n" +
 		wasmFullScript() + "\n" +
 		`flutter run -d web-server`
 }
@@ -275,6 +277,20 @@ cp /tmp/sqlite-wasm/sqlite-wasm-3530300/jswasm/sqlite3.js web/sqlite3.js
 cp /tmp/sqlite-wasm/sqlite-wasm-3530300/jswasm/sqlite3.wasm web/sqlite3.wasm
 cp /tmp/sqlite-wasm/sqlite-wasm-3530300/jswasm/sqlite3-opfs-async-proxy.js web/sqlite3-opfs-async-proxy.js
 rm -rf /tmp/sqlite-wasm /tmp/sqlite-wasm.zip
+`
+}
+
+// ensureSqliteWebAssetsScript downloads the sqlite3 wasm distribution into web/
+// when it is missing. The web worker importScripts()es sqlite3.js at startup and
+// go-wasmsqlite loads the adjacent sqlite3.wasm, so both must be served next to
+// worker.wasm. Projects that never open a database still get them; the download
+// is skipped once present.
+func ensureSqliteWebAssetsScript() string {
+	return `
+# Ensure sqlite3.js exists; download if missing
+if [ ! -f web/sqlite3.js ]; then
+` + sqliteDownloadScript() + `
+fi
 `
 }
 
@@ -397,14 +413,7 @@ func buildPrepareScript(e *projectEnv, createMissingPlatforms bool) string {
 func buildPrepareWasmTestScript() string {
 	var b strings.Builder
 	b.WriteString(godashModuleBootstrap())
-	b.WriteString(`
-# Ensure sqlite3.js exists; download if missing
-if [ ! -f web/sqlite3.js ]; then
-`)
-	b.WriteString(sqliteDownloadScript())
-	b.WriteString(`
-fi
-`)
+	b.WriteString(ensureSqliteWebAssetsScript())
 	b.WriteString(prepareWasmTestScript())
 	return b.String()
 }

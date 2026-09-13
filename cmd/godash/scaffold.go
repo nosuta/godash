@@ -346,6 +346,15 @@ var (
 // rewriteGodashVersion pins the project's godash Dart and Go dependencies to
 // version v (e.g. "v2.2.8"). Missing files are skipped.
 func rewriteGodashVersion(dir, v string) error {
+	// Drop build metadata (e.g. "+dirty" from a dev build): neither a Go module
+	// version nor a pub semver constraint accepts it, and "godash: ^2.3.0+dirty"
+	// fails to resolve.
+	if i := strings.IndexByte(v, '+'); i >= 0 {
+		v = v[:i]
+	}
+	if v == "" {
+		return nil
+	}
 	semver := strings.TrimPrefix(v, "v")
 	gomod := filepath.Join(dir, "go", "go.mod")
 	if b, err := os.ReadFile(gomod); err == nil {
@@ -462,7 +471,9 @@ func parameterizeTemplate(dir, pkg, appName string) error {
 		filepath.Join("go", "go.mod"),
 		filepath.Join("go", "rpc", "echo_server.go"),
 		filepath.Join("go", "rpc", "calc_server.go"),
+		filepath.Join("go", "rpc", "counter_server.go"),
 		filepath.Join("proto", "echo.proto"),
+		filepath.Join("proto", "counter.proto"),
 		filepath.Join("lib", "main.dart"),
 		filepath.Join("lib", "bridge", "bridge.dart"),
 	} {

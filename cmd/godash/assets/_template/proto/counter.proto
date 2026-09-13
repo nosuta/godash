@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package pb;
+
+option go_package = "godashapp/pb";
+
+message IncrementRequest {
+  // Amount added to the stored counter. Zero is treated as 1 by the handler.
+  int32 delta = 1;
+}
+
+message GetCounterRequest {}
+
+message CounterResponse { int64 value = 1; }
+
+// CounterService demonstrates SQLite persistence. The value lives in the
+// per-install database opened in EntryPoint (go/rpc/entrypoint.go) and survives
+// app restarts on native and page reloads on web (via OPFS).
+service CounterService {
+  rpc Increment(IncrementRequest) returns (CounterResponse);
+  rpc Get(GetCounterRequest) returns (CounterResponse);
+}

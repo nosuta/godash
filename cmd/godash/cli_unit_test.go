@@ -35,11 +35,13 @@ func TestParameterizeTemplate(t *testing.T) {
 		t.Fatalf("parameterizeTemplate: %v", err)
 	}
 	checks := map[string]string{
-		"go/go.mod":             "module myapp",
-		"proto/echo.proto":      `go_package = "myapp/pb"`,
-		"go/rpc/echo_server.go": `myapp "myapp/pb"`,
-		"go/rpc/calc_server.go": `myapp "myapp/pb"`,
-		"lib/main.dart":         `package:myapp/`,
+		"go/go.mod":                "module myapp",
+		"proto/echo.proto":         `go_package = "myapp/pb"`,
+		"proto/counter.proto":      `go_package = "myapp/pb"`,
+		"go/rpc/echo_server.go":    `myapp "myapp/pb"`,
+		"go/rpc/calc_server.go":    `myapp "myapp/pb"`,
+		"go/rpc/counter_server.go": `myapp "myapp/pb"`,
+		"lib/main.dart":            `package:myapp/`,
 	}
 	for rel, want := range checks {
 		b, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(rel)))
@@ -164,6 +166,20 @@ func TestRewriteGodashVersion(t *testing.T) {
 	}
 	if !strings.Contains(string(pub), "fixnum: ^1.1.1") {
 		t.Errorf("pubspec unrelated deps must be untouched: %q", string(pub))
+	}
+
+	// A dev build reports build metadata ("+dirty"); it must be stripped before
+	// it becomes a pub constraint / Go module version.
+	if err := rewriteGodashVersion(dir, "v2.2.9+dirty"); err != nil {
+		t.Fatalf("rewriteGodashVersion(+dirty): %v", err)
+	}
+	gomod, _ = os.ReadFile(filepath.Join(dir, "go", "go.mod"))
+	if !strings.Contains(string(gomod), "github.com/nosuta/godash/v2 v2.2.9\n") {
+		t.Errorf("go.mod build metadata not stripped: %q", string(gomod))
+	}
+	pub, _ = os.ReadFile(filepath.Join(dir, "pubspec.yaml"))
+	if !strings.Contains(string(pub), "godash: ^2.2.9\n") {
+		t.Errorf("pubspec build metadata not stripped: %q", string(pub))
 	}
 }
 
@@ -392,6 +408,9 @@ func TestCloneEmbeddedTemplate(t *testing.T) {
 		"pubspec.yaml",
 		"go/go.mod",
 		"go/rpc/echo_server.go",
+		"go/rpc/counter_server.go",
+		"go/rpc/entrypoint.go",
+		"proto/counter.proto",
 		"lib/main.dart",
 	} {
 		if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(rel))); err != nil {

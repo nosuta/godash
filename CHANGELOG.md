@@ -1,3 +1,17 @@
+## 2.3.1
+
+* `godash new` now scaffolds a working SQLite demo: a `CounterService`
+  (`proto/counter.proto`) persisted through the database opened in
+  `go/rpc/entrypoint.go`, with an Increment button in `lib/main.dart`.
+* Protobuf generation compiles every `proto/*.proto`, not just `echo.proto`, so
+  a project can add services without editing godash-owned scripts.
+* `godash web run` / `godash web build` download the sqlite3 web assets
+  (`web/sqlite3.js`, `web/sqlite3.wasm`) when missing, so the SQLite demo works
+  on web after `godash clean`.
+* Fix `godash new` from a dirty dev checkout writing an unresolvable
+  `godash: ^X.Y.Z+dirty` pub constraint (build metadata is now stripped).
+* Docs: document the SQLite demo in the template README.
+
 ## 2.3.0
 
 * Rename the remaining old project-name identifiers to `godash` (breaking for

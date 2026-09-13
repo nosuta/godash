@@ -7,8 +7,10 @@ import 'package:logging/logging.dart';
 
 import 'package:godash/bridge/bridge.dart';
 import 'package:godashapp/app_encryption_key/app_encryption_key.dart';
-import 'package:godashapp/pb/echo.pb.dart';
+import 'package:godashapp/pb/counter.godash.dart';
+import 'package:godashapp/pb/counter.pb.dart';
 import 'package:godashapp/pb/echo.godash.dart';
+import 'package:godashapp/pb/echo.pb.dart';
 import 'package:godashapp/version/version.dart';
 
 Future<void> main() async {
@@ -60,8 +62,39 @@ class EchoScreen extends StatefulWidget {
 
 class _EchoScreenState extends State<EchoScreen> {
   String _response = '';
+  int? _counter;
   bool _busy = false;
   final _controller = TextEditingController(text: 'Hello godash!');
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCounter();
+  }
+
+  Future<void> _loadCounter() async {
+    try {
+      final resp = await CounterRpcClient().get(GetCounterRequest());
+      if (!mounted) return;
+      setState(() => _counter = resp.value.toInt());
+    } catch (e, st) {
+      Logger.root.warning('counter get failed', e, st);
+    }
+  }
+
+  Future<void> _incrementCounter() async {
+    setState(() => _busy = true);
+    try {
+      final resp =
+          await CounterRpcClient().increment(IncrementRequest(delta: 1));
+      if (!mounted) return;
+      setState(() => _counter = resp.value.toInt());
+    } catch (e, st) {
+      Logger.root.warning('counter increment failed', e, st);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
 
   Future<void> _sendEcho() async {
     setState(() => _busy = true);
@@ -105,6 +138,18 @@ class _EchoScreenState extends State<EchoScreen> {
             Text('Response:', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 8),
             Text(_response),
+            const Divider(height: 32),
+            Text(
+              'SQLite counter',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            Text('Value: ${_counter ?? '…'}'),
+            const SizedBox(height: 8),
+            OutlinedButton(
+              onPressed: _busy ? null : _incrementCounter,
+              child: const Text('Increment'),
+            ),
           ],
         ),
       ),
