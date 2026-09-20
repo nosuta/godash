@@ -1,3 +1,17 @@
+## 2.3.4
+
+* Fix generated wiring for projects whose Go module path has several path
+  segments (e.g. `github.com/acme/app`). The `pb` import alias was built from
+  the whole module path (`github.com/acme/apppb`), an invalid Go identifier
+  that broke `godash prepare`; the alias is now derived from the last path
+  segment (`apppb`).
+* `godash prepare` runs the generated `main*.go`, `go/rpc/rpc_handler.go` and
+  `go/rpc/hot_handler.go` through `go/format`, so project wiring is gofmt-clean.
+* Bump `go-wasmsqlite` to v0.3.1. Parameterless multi-statement `Exec` now goes
+  through SQLite's `exec()`, so DDL such as `CREATE TABLE ...; CREATE INDEX ...`
+  is no longer silently truncated to its first statement in the web (OPFS)
+  driver.
+
 ## 2.3.3
 
 * Fix `godash web run`/`godash web build` to use the shared web shell. 2.3.2
