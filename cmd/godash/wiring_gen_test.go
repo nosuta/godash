@@ -14,6 +14,22 @@ func sampleHot() []hotInfo {
 	}
 }
 
+func TestPbAlias(t *testing.T) {
+	cases := map[string]string{
+		"godash":                           "godashpb",
+		"myapp":                            "myapppb",
+		"github.com/acme/app":              "apppb",
+		"github.com/nosuta/concord-go/gui": "guipb",
+		"example.com/v2":                   "v2pb",
+		"example.com/1app":                 "app1apppb",
+	}
+	for mod, want := range cases {
+		if got := pbAlias(mod); got != want {
+			t.Errorf("pbAlias(%q) = %q, want %q", mod, got, want)
+		}
+	}
+}
+
 func TestRenderHotHandlerWithMethods(t *testing.T) {
 	got := renderHotHandler(moduleInfo{Name: "godash", PbAlias: "godashpb"}, sampleHot())
 	for _, want := range []string{

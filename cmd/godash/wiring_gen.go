@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"go/format"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -52,6 +53,22 @@ func readModuleName(dir string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("no module line in go.mod")
+}
+
+// pbAlias derives a valid Go import alias for "<module>/pb" from the module
+// name. Multi-segment module paths collapse to their last segment, so
+// "github.com/acme/app" yields "apppb" rather than the invalid identifier
+// "github.com/acme/apppb".
+func pbAlias(modName string) string {
+	seg := modName
+	if i := strings.LastIndex(seg, "/"); i >= 0 {
+		seg = seg[i+1:]
+	}
+	seg = regexp.MustCompile(`[^A-Za-z0-9_]+`).ReplaceAllString(seg, "")
+	if seg == "" || (seg[0] >= '0' && seg[0] <= '9') {
+		seg = "app" + seg
+	}
+	return seg + "pb"
 }
 
 // scanServices parses go/pb/*.godash.go and returns the discovered services.
@@ -173,7 +190,7 @@ func writeWiringFiles(projectRoot, licensesTplPath string) error {
 	}
 	mod := moduleInfo{
 		Name:    modName,
-		PbAlias: modName + "pb",
+		PbAlias: pbAlias(modName),
 	}
 
 	// go/*.go — entry points (native + web).
@@ -193,7 +210,7 @@ func writeWiringFiles(projectRoot, licensesTplPath string) error {
 		{"main_js_release.go", renderMainJsBuildVariant(mod, "release")},
 	}
 	for _, f := range files {
-		if err := os.WriteFile(filepath.Join(goDir, f.name), []byte(f.content), 0644); err != nil {
+		if err := os.WriteFile(filepath.Join(goDir, f.name), []byte(gofmtContent(f.content)), 0644); err != nil {
 			return err
 		}
 	}
@@ -203,11 +220,11 @@ func writeWiringFiles(projectRoot, licensesTplPath string) error {
 	if err := os.MkdirAll(rpcDir, 0755); err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(rpcDir, "rpc_handler.go"), []byte(renderRPCHandler(mod, services)), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(rpcDir, "rpc_handler.go"), []byte(gofmtContent(renderRPCHandler(mod, services))), 0644); err != nil {
 		return err
 	}
 	// go/rpc/hot_handler.go — native-only packed-struct dispatcher.
-	if err := os.WriteFile(filepath.Join(rpcDir, "hot_handler.go"), []byte(renderHotHandler(mod, hot)), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(rpcDir, "hot_handler.go"), []byte(gofmtContent(renderHotHandler(mod, hot))), 0644); err != nil {
 		return err
 	}
 
@@ -270,6 +287,17 @@ func patchNativeLinkerHotSymbols(projectRoot string, hot []hotInfo) error {
 		}
 	}
 	return nil
+}
+
+// gofmtContent formats generated Go source. It is best-effort: on a parse
+// error the original content is returned unchanged so prepare never fails
+// because of formatting.
+func gofmtContent(content string) string {
+	src, err := format.Source([]byte(content))
+	if err != nil {
+		return content
+	}
+	return string(src)
 }
 
 // lowerFirst lowercases the first ASCII letter of s, leaving the rest
