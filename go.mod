@@ -9,7 +9,7 @@ tool (
 
 require (
 	github.com/aperturerobotics/protobuf-go-lite v0.12.2
-	github.com/nosuta/go-wasmsqlite v0.3.1
+	github.com/nosuta/go-wasmsqlite v0.3.2
 	google.golang.org/protobuf v1.36.11
 	marwan.io/wasm-fetch v0.1.0
 	modernc.org/sqlite v1.33.1
@@ -17,10 +17,7 @@ require (
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/golang-migrate/migrate/v4 v4.19.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/hashicorp/errwrap v1.1.0 // indirect
-	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/ncruces/go-strftime v0.1.9 // indirect

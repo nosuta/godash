@@ -1,3 +1,12 @@
+## 2.3.5
+
+* Bump `go-wasmsqlite` to v0.3.2. The web (OPFS) SQLite driver no longer
+  prints per-query debug output (`First row: …`, `Query returned …`, `🔍 …`) to
+  the browser console in release builds, and is slimmed down to the OO direct
+  route that godash uses: the golang-migrate integration, embedded-asset API,
+  VFS detection, dump/load helpers and the demo app are removed. This also drops
+  the `golang-migrate` and `go-multierror` transitive dependencies.
+
 ## 2.3.4
 
 * Fix generated wiring for projects whose Go module path has several path
