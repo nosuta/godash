@@ -38,13 +38,14 @@
             background-color: rgb(0, 0, 0);
         }
 
+        /* The Flutter engine takes over <body> and forces it to the full
+           viewport. Constraining its height (e.g. 95vh) makes the app shorter
+           than the visual viewport, which feeds a stale physicalSize into the
+           engine's keyboard-inset math. Keep <body> unconstrained and center
+           the loading spinner with fixed positioning instead. */
         body {
-            display: flex;
-            height: 95vh;
-            align-items: center;
-            justify-content: center;
+            margin: 0;
         }
-
 
         #loading,
         #loading div,
@@ -54,8 +55,12 @@
         }
 
         #loading {
-            display: inline-block;
-            position: relative;
+            position: fixed;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            left: 0;
+            margin: auto;
             width: 80px;
             height: 80px;
             transform: rotate(45deg);
@@ -135,6 +140,32 @@
     <div id="loading">
         <div></div>
     </div>
+    <script>
+        // Workaround for an upstream Flutter web engine assertion. On mobile
+        // browsers, dismissing the on-screen keyboard can make the engine
+        // compute a stale physicalSize and fail an internal debug assert
+        // ("ViewInsets cannot be negative" in lib/web_ui .../window.dart
+        // _computeOnScreenKeyboardInsets), which surfaces as an uncaught
+        // promise rejection. It does not affect the app; drop just that error
+        // so it does not spam the console. Remove once the engine is fixed.
+        (function () {
+            function isKeyboardInsetAssertion(reason) {
+                if (!reason) return false;
+                var text = reason.message || (reason.toString ? String(reason) : '');
+                return text.indexOf('ViewInsets cannot be negative') !== -1;
+            }
+            window.addEventListener('unhandledrejection', function (event) {
+                if (isKeyboardInsetAssertion(event.reason)) event.preventDefault();
+            });
+            window.addEventListener('error', function (event) {
+                var message = event.message || '';
+                if (isKeyboardInsetAssertion(event.error) ||
+                    message.indexOf('ViewInsets cannot be negative') !== -1) {
+                    event.preventDefault();
+                }
+            });
+        })();
+    </script>
     <script src="flutter_bootstrap.js" async></script>
 </body>
 
