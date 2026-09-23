@@ -1,3 +1,22 @@
+## 2.3.6
+
+* The web host assets are re-extracted into a project on every `godash prepare`
+  / `godash web build`, so fixes must live in the embedded templates rather
+  than a project's `web/`.
+  * `web/index.html` no longer constrains `<body>` (`height: 95vh` + flex
+    centering). That made the Flutter view shorter than the visual viewport and
+    fed a stale `physicalSize` into the engine's keyboard-inset math, which made
+    `WebSocket`/keyboard handling flaky on mobile web. The loading spinner is
+    now centered with fixed positioning instead, and the page suppresses the
+    upstream Flutter debug assertion `ViewInsets cannot be negative` so it no
+    longer spams the console.
+  * `web/worker.js` wraps `WebSocket.prototype.close` to clamp close codes the
+    browser rejects (a Go client may close a broken connection with 1006) to
+    1000 and to truncate the reason. Release workers build with TinyGo
+    `-panic=trap`, which cannot recover the JS exception, so an invalid-code
+    close previously trapped and killed the whole worker
+    (`failed to launch root worker`).
+
 ## 2.3.5
 
 * Bump `go-wasmsqlite` to v0.3.2. The web (OPFS) SQLite driver no longer
