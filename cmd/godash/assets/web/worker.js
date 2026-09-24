@@ -2,18 +2,20 @@
 
 // Workaround for a TinyGo release-build crash. Release workers are built with
 // TinyGo -panic=trap, which cannot recover JS exceptions; a throw from a
-// syscall/js call therefore traps and kills the worker. Concretely, a Go
-// WebSocket client may close a broken connection with status 1006 (abnormal
-// closure), which the browser's WebSocket.close() rejects. Clamp the code to
-// an accepted value and truncate the reason so the call never throws. The
-// code/reason are advisory here; the socket closes either way.
+// syscall/js call therefore traps and kills the worker. A Go WebSocket client
+// may close a broken connection with status 1006 (abnormal closure), which the
+// browser's WebSocket.close() rejects with InvalidAccessError. Do NOT rewrite
+// the code (that would actually close a socket the caller meant to leave
+// alone, breaking reconnects): swallow the invalid call entirely. The browser
+// tears the socket down through its own error/close event, which is exactly
+// what happens when the exception propagates on a non-trapping build.
 (function () {
     if (typeof WebSocket === "undefined" || !WebSocket.prototype) return;
     const originalClose = WebSocket.prototype.close;
     WebSocket.prototype.close = function (code, reason) {
         if (code !== undefined && code !== null &&
             code !== 1000 && !(code >= 3000 && code <= 4999)) {
-            code = 1000;
+            return;
         }
         if (typeof reason === "string" && reason.length > 123) {
             reason = reason.slice(0, 123);

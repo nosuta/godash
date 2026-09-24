@@ -1,3 +1,16 @@
+## 2.3.7
+
+* `web/worker.js` no longer rewrites an invalid `WebSocket.close` code to 1000.
+  The 2.3.6 workaround clamped a code the browser rejects (a Go client may close
+  a broken connection with 1006) so the call would not throw under TinyGo's
+  `-panic=trap`, but clamping actually *closed* the socket. A client that meant
+  to leave a broken connection to the browser's own error/close teardown now
+  tore it down itself, which broke relay reconnection: on Web no relay events
+  were delivered at all (communities, channels and messages never loaded). An
+  invalid-code close is now swallowed instead, which matches the behaviour when
+  the exception propagates on a non-trapping build while still avoiding the
+  `-panic=trap` crash.
+
 ## 2.3.6
 
 * The web host assets are re-extracted into a project on every `godash prepare`

@@ -1,6 +1,6 @@
 name: godash
 description: "Cross-platform Flutter + Go/TinyGo bridge: protobuf FFI transport, code generation, and native build tooling."
-version: 2.3.6
+version: 2.3.7
 
 repository: https://github.com/nosuta/godash
 issue_tracker: https://github.com/nosuta/godash/issues
