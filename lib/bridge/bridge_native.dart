@@ -39,10 +39,6 @@ class Bridge extends ChangeNotifier {
   static Bridge? _instance;
   static _BridgeConfig? _config;
 
-  /// isConfigured reports whether [configure] has run. A frontend can check it
-  /// before touching [Bridge] without risking a StateError.
-  static bool get isConfigured => _config != null;
-
   /// Configures the singleton bridge. Call once before using [Bridge].
   /// [workerUrl] is ignored on native platforms and only used on the web.
   static void configure({
@@ -74,16 +70,6 @@ class Bridge extends ChangeNotifier {
   }
 
   bool get ready => _ready;
-
-  /// generation is always 0 on native: there is no worker to restart, so the
-  /// interface matches the web bridge without ever signalling a restart.
-  int get generation => 0;
-
-  /// onRestart never fires on native.
-  Stream<int> get onRestart => const Stream<int>.empty();
-
-  /// fatal is true when the native library failed to initialize.
-  bool get fatal => _fatal;
 
   static const String _libName = String.fromEnvironment(
     'LIB_NAME',

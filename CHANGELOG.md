@@ -1,17 +1,3 @@
-## 2.4.0
-
-* Web bridge auto-restarts a dead worker. A TinyGo release worker builds with
-  `-panic=trap`, so a JS exception from a `syscall/js` call traps the wasm
-  instance and kills the worker; previously the bridge set a fatal flag and
-  every later RPC hung. `Bridge` now terminates the dead worker and spawns a
-  fresh one, re-runs the global Init handshake, and fails in-flight unary RPCs
-  and open server streams so callers do not wait on dead ports. It exposes
-  `generation`, `onRestart`, and `fatal`; a frontend that keeps engine state in
-  Dart should re-run its own Initialize on `onRestart` (the new Go process
-  starts empty but the persistent store survives). `Bridge.isConfigured` lets a
-  frontend check before touching the bridge. Restarts are capped
-  (`_maxRestartAttempts`) so a worker that cannot start ends as `fatal`.
-
 ## 2.3.7
 
 * `web/worker.js` no longer rewrites an invalid `WebSocket.close` code to 1000.

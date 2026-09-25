@@ -5,8 +5,4 @@ void main() {
   test('Bridge() requires configure before first use', () {
     expect(() => Bridge(), throwsStateError);
   });
-
-  test('Bridge.isConfigured is false until configure runs', () {
-    expect(Bridge.isConfigured, isFalse);
-  });
 }
