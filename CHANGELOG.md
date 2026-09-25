@@ -1,3 +1,14 @@
+## 2.4.2
+
+* RPC server streams are no longer killed by the caller's unary deadline.
+  `rpc.Call` applied the async envelope's 10s `context.WithTimeout` to every
+  request, so a long-lived stream (for example an engine event subscription) was
+  cancelled after 10 seconds with `context deadline exceeded`; a frontend that
+  did not re-subscribe then stopped receiving events. Applications now register
+  their streaming method paths with `rpc.RegisterStreamingPath` (and can check
+  with `rpc.IsStreamingPath`); `Call` dispatches a registered path with the
+  deadline removed while keeping cancellation through `Cancel` / ctx.
+
 ## 2.4.1
 
 * Reverted the 2.4.0 web bridge worker auto-restart. Live Web testing showed the
