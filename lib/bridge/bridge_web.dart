@@ -36,6 +36,10 @@ class Bridge extends ChangeNotifier {
   static Bridge? _instance;
   static _BridgeConfig? _config;
 
+  /// isConfigured reports whether [configure] has run. A frontend can check it
+  /// before touching [Bridge] (and [onRestart]) without risking a StateError.
+  static bool get isConfigured => _config != null;
+
   /// Configures the singleton bridge. Call once before using [Bridge].
   ///
   /// [useSharedMemory] opts streaming RPCs into a `SharedArrayBuffer` ring
@@ -68,20 +72,6 @@ class Bridge extends ChangeNotifier {
     }
     final config = _config!;
     _log.info('web bridge instantiate');
-    final workerUrl = config.workerUrl;
-    _log.info('creating worker: $workerUrl');
-    final options = {'type': 'classic'.toJS}.jsify() as web.WorkerOptions;
-    final w = web.Worker(workerUrl.toJS, options);
-    if (!w.isDefinedAndNotNull) {
-      _log.severe('worker is not defined or null');
-    }
-    w.onmessage = _onGlobalMessage.toJS;
-    w.onerror = ((web.Event event) {
-      _log.shout('worker error: ${event.type}');
-      _fatal = true;
-    }).toJS;
-
-    _worker = w;
     _pushController = StreamController<Push>.broadcast();
 
     _sharedMemorySlots = config.sharedMemorySlots;
@@ -97,17 +87,60 @@ class Bridge extends ChangeNotifier {
         '(page is not cross-origin isolated); using the envelope',
       );
     }
+    _createWorker();
   }
   factory Bridge() {
     _instance ??= Bridge._();
     return _instance!;
   }
 
+  /// Creates a worker and wires its handlers. Called once from the constructor
+  /// and again on every auto-restart.
+  ///
+  /// A TinyGo release worker is built with `-panic=trap` and cannot recover a
+  /// JS exception: a throw from a `syscall/js` call becomes a Go panic and
+  /// traps the wasm instance, killing the worker. Rather than freezing the app
+  /// on a dead RPC channel (GUI-34), the bridge terminates the dead worker and
+  /// spawns a fresh one, then re-runs the global Init handshake. The Go side
+  /// starts empty again but its persistent store survives, so the frontend can
+  /// re-run its own Initialize after [onRestart] fires.
+  void _createWorker() {
+    final config = _config!;
+    final workerUrl = config.workerUrl;
+    _log.info('creating worker: $workerUrl');
+    _dead = false;
+    final options = {'type': 'classic'.toJS}.jsify() as web.WorkerOptions;
+    final w = web.Worker(workerUrl.toJS, options);
+    if (!w.isDefinedAndNotNull) {
+      _log.severe('worker is not defined or null');
+    }
+    w.onmessage = _onGlobalMessage.toJS;
+    w.onerror = ((web.Event event) {
+      _log.shout('worker error: ${event.type}');
+      _handleWorkerDeath('error event');
+    }).toJS;
+    _worker = w;
+  }
+
   bool get ready => _ready;
   Stream<Push> get push => _pushController.stream;
 
+  /// generation increments each time the worker is replaced and comes back
+  /// ready. A frontend that keeps engine state in Dart should listen to
+  /// [onRestart] (or watch [generation]) and re-run its own Initialize, because
+  /// the new worker's Go process starts empty.
+  int get generation => _generation;
+
+  /// onRestart emits the new [generation] after an auto-restart completes. It
+  /// does not fire for the initial worker (generation 0).
+  Stream<int> get onRestart => _restartController.stream;
+
+  /// fatal is true when the worker could not be (re)started at all. The bridge
+  /// is unusable until the app is reloaded.
+  bool get fatal => _fatal;
+
   final _log = Logger('Bridge Web');
-  late final web.Worker _worker;
+  late web.Worker _worker;
   late final StreamController<Push> _pushController;
 
   Int64 _port = Int64(0);
@@ -116,6 +149,31 @@ class Bridge extends ChangeNotifier {
   bool _sharedMemoryEnabled = false;
   int _sharedMemorySlots = 0;
   int _sharedMemorySlotBytes = 0;
+  // _dead guards duplicate death signals for the same worker; it resets when a
+  // new worker is created. _restartAttempts caps the restart loop so a worker
+  // that cannot start at all ends as fatal instead of spinning forever.
+  bool _dead = false;
+  bool _disposed = false;
+  int _generation = 0;
+  int _restartAttempts = 0;
+  Timer? _restartTimer;
+  // _pending tracks in-flight unary RPC completers so a worker death fails them
+  // promptly instead of leaving the caller hanging on a dead MessageChannel.
+  final Set<Completer<Response>> _pending = <Completer<Response>>{};
+  // _streams tracks open server-streaming controllers so a worker death closes
+  // them (the `await for` in the generated client then ends) rather than
+  // hanging on a port that will never speak again.
+  final Set<StreamController<Response>> _streams = <StreamController<Response>>{};
+  final StreamController<int> _restartController =
+      StreamController<int>.broadcast();
+
+  /// How many times the bridge respawns a dead worker before giving up.
+  static const int _maxRestartAttempts = 6;
+
+  /// How long to wait before respawning. Fixed and short: a worker start is
+  /// fast, and the total (attempts x delay) stays well under _waitReady's
+  /// 10s budget.
+  static const Duration _restartDelay = Duration(milliseconds: 500);
 
   /// True when streaming RPCs use the shared-memory ring (P6). Requires the
   /// page to be cross-origin isolated and the caller to opt in.
@@ -123,9 +181,70 @@ class Bridge extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
+    _restartTimer?.cancel();
+    _failPending('bridge disposed');
     _pushController.close();
+    _restartController.close();
     _worker.terminate();
     super.dispose();
+  }
+
+  /// _handleWorkerDeath tears down a dead worker and schedules a fresh one. It
+  /// is idempotent per worker: _dead blocks the duplicate signals a single trap
+  /// can produce (an `onerror` plus the worker's `postMessage(undefined)`).
+  void _handleWorkerDeath(String reason) {
+    if (_disposed || _dead) return;
+    _dead = true;
+    _log.shout('worker died ($reason); restarting');
+    _ready = false;
+    _failPending('worker restarted');
+    _closeStreams();
+    try {
+      _worker.terminate();
+    } catch (e) {
+      _log.warning('worker terminate failed: $e');
+    }
+    if (_restartAttempts >= _maxRestartAttempts) {
+      _log.shout('worker restart attempts exhausted; bridge is fatal');
+      _fatal = true;
+      notifyListeners();
+      return;
+    }
+    _restartAttempts++;
+    _restartTimer?.cancel();
+    _restartTimer = Timer(_restartDelay, () {
+      if (_disposed) return;
+      _log.info(
+        'respawning worker (attempt $_restartAttempts/$_maxRestartAttempts)',
+      );
+      _createWorker();
+    });
+  }
+
+  /// _failPending completes every in-flight unary RPC with an error so callers
+  /// do not wait on a MessageChannel owned by the dead worker.
+  void _failPending(String reason) {
+    final pending = _pending.toList();
+    _pending.clear();
+    for (final comp in pending) {
+      if (!comp.isCompleted) {
+        comp.completeError(StateError(reason));
+      }
+    }
+  }
+
+  /// _closeStreams ends every open server-streaming controller. The dead
+  /// worker cannot send a Done frame, so closing here is what unwinds the
+  /// generated client's `await for`.
+  void _closeStreams() {
+    final streams = _streams.toList();
+    _streams.clear();
+    for (final controller in streams) {
+      if (!controller.isClosed) {
+        controller.close();
+      }
+    }
   }
 
   Int64 _nextPort() {
@@ -190,21 +309,23 @@ class Bridge extends ChangeNotifier {
 
   void _onGlobalMessage(web.MessageEvent message) {
     _log.info('_onGlobalMessage: ${message.data}');
+    // The worker posts `undefined` when its wasm instance traps or fails to
+    // load (worker.js catches the `go.run` rejection). Treat it as a death so
+    // the bridge can respawn rather than freezing (GUI-34).
     if (message.isUndefinedOrNull || message.data.isUndefinedOrNull) {
-      _log.shout('unsupported system (see browser logs)');
-      _fatal = true;
+      _handleWorkerDeath('worker posted undefined');
       return;
     }
     final b = (message.data as JSUint8Array?)?.toDart;
     if (b == null) {
-      _log.shout('missing message');
-      _fatal = true;
+      _handleWorkerDeath('missing message');
       return;
     }
     final resp = Response.fromBuffer(b);
     if (resp.hasError()) {
       _log.shout('bridge global error: ${resp.error.message}');
       _fatal = true;
+      notifyListeners();
       return;
     }
 
@@ -212,22 +333,39 @@ class Bridge extends ChangeNotifier {
       _config!.appEncryptionKey().then((key) {
         _log.info('app encryption key: $key');
         final req = Request(init: Init(appEncryptionKey: key));
-        rpcUnsafe(req).then((resp) {
-          _log.info('bridge global init response');
-          if (resp.hasError()) {
-            _log.shout('bridge global error: ${resp.error.message}');
+        // The handshake runs before the bridge is ready, so it bypasses the
+        // readiness gate; an error is treated as another death so a worker
+        // that cannot initialize is respawned (up to the attempt cap).
+        rpcUnsafe(req, requireReady: false).then(
+          (resp) {
+            _log.info('bridge global init response');
+            if (resp.hasError()) {
+              _log.shout('bridge global error: ${resp.error.message}');
+              _handleWorkerDeath('init error');
+              return;
+            }
+            if (resp.hasDone()) {
+              final restarted = _restartAttempts > 0;
+              _log.info('worker is ready');
+              _ready = true;
+              _fatal = false;
+              _restartAttempts = 0;
+              if (restarted) {
+                _generation++;
+                _restartController.add(_generation);
+              }
+              notifyListeners();
+              return;
+            }
+            _log.shout('unknown fatal situation');
             _fatal = true;
-            return;
-          }
-          if (resp.hasDone()) {
-            _log.info('worker is ready');
-            _ready = true;
             notifyListeners();
-            return;
-          }
-          _log.shout('unknown fatal situation');
-          _fatal = true;
-        });
+          },
+          onError: (Object error) {
+            _log.shout('bridge init failed: $error');
+            _handleWorkerDeath('init failed');
+          },
+        );
       });
       return;
     } else if (resp.hasPush()) {
@@ -236,6 +374,7 @@ class Bridge extends ChangeNotifier {
     }
     _log.shout('unknown fatal situation');
     _fatal = true;
+    notifyListeners();
   }
 
   Future<void> _waitReady() async {
@@ -260,8 +399,17 @@ class Bridge extends ChangeNotifier {
     });
   }
 
-  Future<Response> rpcUnsafe(Request req) async {
+  Future<Response> rpcUnsafe(Request req, {bool requireReady = true}) async {
+    if (_fatal) {
+      throw StateError('bridge worker is not running');
+    }
+    if (requireReady && !_ready) {
+      // The worker is dead and a respawn is pending. Fail fast so the caller
+      // can retry after onRestart instead of hanging on a dead port.
+      throw StateError('bridge worker is restarting');
+    }
     final comp = Completer<Response>();
+    _pending.add(comp);
     req.port = _nextPort();
     final ch = web.MessageChannel();
 
@@ -272,6 +420,7 @@ class Bridge extends ChangeNotifier {
         ch.port1.close();
         return;
       }
+      _pending.remove(comp);
       final b = (message.data as JSUint8Array?)?.toDart;
       if (b != null) {
         final resp = Response.fromBuffer(b);
@@ -337,8 +486,12 @@ class Bridge extends ChangeNotifier {
     BackpressurePolicy? backpressure,
   }) async {
     await _waitReady();
+    if (_fatal || !_ready) {
+      throw StateError('bridge worker is restarting');
+    }
 
     final controller = StreamController<Response>();
+    _streams.add(controller);
     final port = _nextPort();
     _log.info('rpc stream: $port');
     req.port = port;
@@ -368,6 +521,7 @@ class Bridge extends ChangeNotifier {
       if (resp.hasDone()) {
         ch.port2.close();
         ch.port1.close();
+        _streams.remove(controller);
         controller.close();
         _log.info('rpc stream: done $port');
         return;
@@ -395,15 +549,22 @@ class Bridge extends ChangeNotifier {
 
     controller.onCancel = () async {
       _log.info('rpc stream: on cancel $port');
+      _streams.remove(controller);
       // Close ports immediately to release MessageChannel resources,
       // regardless of whether Go sends Done.
       ch.port1.onmessage = null;
       ch.port2.close();
       ch.port1.close();
       final req = Request(cancel: Cancel(port: port));
-      final resp = await rpcUnsafe(req);
-      if (resp.hasError()) {
-        _log.severe('rpc stream error on cancel: ${resp.error.message}');
+      // After a worker restart there is nothing to cancel; do not let the
+      // failure escape an onCancel callback.
+      try {
+        final resp = await rpcUnsafe(req);
+        if (resp.hasError()) {
+          _log.severe('rpc stream error on cancel: ${resp.error.message}');
+        }
+      } catch (e) {
+        _log.info('rpc stream cancel skipped: $e');
       }
     };
 
