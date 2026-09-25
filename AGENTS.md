@@ -75,7 +75,7 @@ Notes:
 
 | path | what it is |
 |---|---|
-| `rpc/` | Go dispatch: `Call` (async), `CallSync` (blocking unary), reverse calls, push, port cancel |
+| `rpc/` | Go dispatch: `Call` (async unary + streams), reverse calls, push, port cancel |
 | `dart_api/` | cgo glue: `InitializeDartAPI`, `SendPointerAddress`, `BytesToPointerAddress`/`BytesToContainer`, `GoDash_FreeBytesContainer` |
 | `pb/` | envelope (`core.pb.go`, lite variant, `marshal_*`) + `options.pb.go` (`(godash.hot)`) |
 | `proto/` | `core.proto`, `godash/options.proto` |
@@ -101,8 +101,8 @@ Notes:
 
 - Request containers: Dart allocates (`bytesToBytesContainerPointer`), Dart frees
   (`freeBytesContainerPointer`) **after the synchronous `RPC` export returns** —
-  the export copies via `C.GoBytes` on the calling thread before spawning its
-  goroutine.
+  the export parses via `unsafe.Slice` zero-copy on the calling thread (copying
+  fields with `UnmarshalVT`) before spawning its goroutine.
 - Response/push containers: Go allocates (`dart_api.BytesToPointerAddress`); Dart
   frees through the Go-exported `FreeBytesContainer` symbol
   (`GoDash_FreeBytesContainer` in `dart_api/bridge.c`).
@@ -115,15 +115,16 @@ Dart helpers live in `lib/bridge/native_bytes.dart` and use a configurable
 `configureResponseContainerFree` hook so they stay testable without the dylib;
 `Bridge` wires it to `_lib.FreeBytesContainer`.
 
-### 2. Sync path contract
+### 2. Unary calls are async
 
-`CallSync` / `rpcSync` block the platform thread. They are **unary-only** and for
-short handlers. `rpcUnary` awaits readiness first (`rpcSync` throws if not ready,
-to avoid deadlocking the isolate event loop before `Init` completes). Streaming,
-reverse calls and cancel must stay on the async path.
-
-`rpc.CallSync` calls `handleRPC` directly with a response channel of capacity 1;
-a streaming handler would block on its second send — keep it unary-only.
+All unary RPCs run on the async transport: the `RPC` export spawns a goroutine
+and posts the response back through a native port, so the Dart platform (UI)
+thread never blocks. `Transport.unary` waits for readiness (`rpcUnary`) and then
+delegates to `rpc`. There is **no** synchronous FFI unary path — it used to run
+handlers (`CallSync` / `rpcSync`) on the platform thread and froze the UI for
+slow handlers (network fetches, media decrypt, roster folds). Do not
+reintroduce one; long handlers would necessarily block the UI thread. Streaming,
+reverse calls and cancel also stay on the async path.
 
 ### 3. Hot path contract
 
@@ -144,7 +145,7 @@ a streaming handler would block on its second send — keep it unary-only.
 ### 4. Dynamic bindings (no ffigen)
 
 `lib/bridge/native_library.dart` hand-resolves `InitializeDartAPI`, `RPC`,
-`CallSync`, `FreeBytesContainer` with `DynamicLibrary.lookupFunction`. Hot
+`FreeBytesContainer` with `DynamicLibrary.lookupFunction`. Hot
 exports are resolved dynamically in `Bridge.hotRaw` (cached per symbol) using
 `_lib.handle`. Keep the `BytesContainer` struct layout in sync with the cgo
 preamble (`void* message; int size;`).

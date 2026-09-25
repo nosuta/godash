@@ -35,9 +35,8 @@ func PointerAddr(bc unsafe.Pointer) C.int64_t {
 }
 
 // BytesToContainer allocates a BytesContainer on the C heap holding a copy of
-// b and returns the container pointer. Used by the synchronous FFI fast path
-// (CallSync), where the response is returned directly instead of being posted
-// to a Dart port.
+// b and returns the container pointer. Used by the async response path via
+// [BytesToPointerAddress], where the container address is posted to a Dart port.
 func BytesToContainer(b []byte) unsafe.Pointer {
 	bc := (*C.BytesContainer)(C.malloc(C.size_t(C.sizeof_BytesContainer)))
 	bc.message = C.CBytes(b)

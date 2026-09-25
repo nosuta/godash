@@ -81,6 +81,12 @@ Acceptance: no copies of response bytes on the Dart side; tests green; benchmark
 
 ### P2 — Sync FFI unary path (the latency core)
 
+> **Removed.** The synchronous unary path (`CallSync` / `rpcSync`) ran handlers
+> on the Dart platform (UI) thread and froze the UI whenever a handler was slow
+> (network fetches, media decrypt, roster folds). All unary calls now use the
+> async envelope. The section below is kept as history; the design is no longer
+> in the tree.
+
 - [x] New export in generated `go/main.go` (via `cmd/godash/wiring_gen.go`):
       `Response* CallSync(payload *C.BytesContainer)` — blocking unary call, no goroutine,
       no `ReceivePort`, no port round-trip.
@@ -250,7 +256,7 @@ cross-origin isolation headers. Opt-in only.
 |---|---|
 | P0 Test foundation | done (tests + baseline in `benchmark/RESULTS.md`) |
 | P1 Response zero-copy + allocator contract | done (zero-copy parse + `FreeBytesContainer` contract; delta in `benchmark/RESULTS.md`) |
-| P2 Sync FFI unary path | done (`CallSync` + `rpcSync`; unary p50 40 → 14 µs) |
+| P2 Sync FFI unary path | **removed** (froze the UI on slow handlers; unary is async again) |
 | P3 Typed hot-path C exports | done (`godash.hot` + packed `void*` ABI; hot mean ~0.5 µs) |
 | follow-up: remove ffigen | done (hand-written dynamic `native_library.dart`) |
 | P4 Request ownership transfer | done (zero-copy request parse; no `C.GoBytes`) |

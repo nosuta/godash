@@ -84,8 +84,8 @@ func TestRenderMainGoZeroCopyRequest(t *testing.T) {
 		t.Error("renderMainGo must not copy the request via C.GoBytes (PLAN.md P4)")
 	}
 	const slice = "unsafe.Slice((*byte)(payload.message)"
-	if c := strings.Count(got, slice); c != 2 {
-		t.Errorf("expected 2 zero-copy request slices (RPC + CallSync), got %d", c)
+	if c := strings.Count(got, slice); c != 1 {
+		t.Errorf("expected 1 zero-copy request slice (RPC), got %d", c)
 	}
 }
 

@@ -91,28 +91,6 @@ func FreeBytesContainer(payload *C.BytesContainer) {
 	C.GoDash_FreeBytesContainer(unsafe.Pointer(payload))
 }
 
-//export CallSync
-func CallSync(payload *C.BytesContainer) *C.BytesContainer {
-	// Zero-copy: parse directly from the Dart-owned C buffer.
-	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*10000)
-	defer cancel()
-
-	rb, err := rpc.RPC().CallSync(ctx, unsafe.Slice((*byte)(payload.message), int(payload.size)))
-	if err != nil {
-		e, merr := (&pb.Response{
-			Responses: &pb.Response_Error{
-				Error: &pb.Error{Code: 500, Message: err.Error()},
-			},
-		}).MarshalVT()
-		if merr != nil {
-			slog.Error("failed to marshal sync error response", "error", merr.Error())
-			return nil
-		}
-		rb = e
-	}
-	return (*C.BytesContainer)(dart_api.BytesToContainer(rb))
-}
-
 // BenchHotAdd is a packed-struct hot-path export mirroring the shape generated
 // by protoc-gen-go-godash for a `(godash.hot)` method: an int64 request field
 // and an int64 response field, no protobuf, no envelope, no port.

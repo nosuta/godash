@@ -3,7 +3,7 @@
 /// Hand-written native transport bindings.
 ///
 /// godash no longer uses ffigen. The native ABI surface is a small, stable set
-/// of exports (`InitializeDartAPI`, `RPC`, `CallSync`, `FreeBytesContainer`)
+/// of exports (`InitializeDartAPI`, `RPC`, `FreeBytesContainer`)
 /// which are resolved at runtime with [DynamicLibrary.lookupFunction]. Generated
 /// per-method hot-path exports are resolved dynamically in
 /// `bridge_native.dart` (`hotRaw`), so no code generation step is required.
@@ -33,13 +33,6 @@ typedef _RPCNative = ffi.Void Function(
   ffi.Pointer<BytesContainer>,
 );
 typedef _RPCDart = void Function(int, ffi.Pointer<BytesContainer>);
-
-typedef _CallSyncNative = ffi.Pointer<BytesContainer> Function(
-  ffi.Pointer<BytesContainer>,
-);
-typedef _CallSyncDart = ffi.Pointer<BytesContainer> Function(
-  ffi.Pointer<BytesContainer>,
-);
 
 typedef _FreeBytesContainerNative = ffi.Void Function(
   ffi.Pointer<BytesContainer>,
@@ -71,12 +64,6 @@ class NativeLibrary {
   late final _RPC = _lib.lookupFunction<_RPCNative, _RPCDart>('RPC');
 
   void RPC(int port, ffi.Pointer<BytesContainer> payload) => _RPC(port, payload);
-
-  late final _CallSync = _lib
-      .lookupFunction<_CallSyncNative, _CallSyncDart>('CallSync');
-
-  ffi.Pointer<BytesContainer> CallSync(ffi.Pointer<BytesContainer> payload) =>
-      _CallSync(payload);
 
   late final _FreeBytesContainer = _lib
       .lookupFunction<_FreeBytesContainerNative, _FreeBytesContainerDart>(

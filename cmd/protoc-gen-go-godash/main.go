@@ -151,7 +151,7 @@ func collectHotMethods(services []*protogen.Service) []hotMethod {
 
 // generateHotFile emits <file>.hot.go, native-only (`//go:build !js`), holding
 // the packed-struct unpack/pack functions for each hot method. They are called
-// from the generated `CallSync`-style exports through the rpc.HotInvoke
+// from the generated packed-struct exports through the rpc.HotInvoke
 // dispatcher. Keeping this file off the web build means the web worker never
 // compiles the unsafe pointer code.
 func generateHotFile(gen *protogen.Plugin, file *protogen.File, hot []hotMethod) {

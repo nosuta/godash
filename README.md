@@ -24,8 +24,7 @@ Local-development and fork workflows can still use a `path:` dependency.
   turn `service` definitions into a Go handler interface + dispatcher and a Dart
   client (`*RpcClient`), plus push and reverse-service helpers.
 - **Layered performance paths.**
-  - async envelope (default, general transport),
-  - **sync unary** (`CallSync`) — no goroutine/`ReceivePort`/port round trip,
+  - async envelope (default, general transport; unary and streams),
   - **packed hot path** (`option (godash.hot) = true;`) — bypasses protobuf
     entirely for scalar-only unary methods.
 - **Stream backpressure.** Opt-in per stream: `dropLatest` (conflate),
@@ -192,19 +191,18 @@ await Bridge().ready; // optional: wait for the Init exchange to finish
 - **Push**: Go → Dart fire-and-forget messages (`pusher.Pusher`).
 - **Reverse-RPC**: Go → Dart → Go calls (`ReverseCall` / `sendReverseResponse`).
 
-### Sync unary fast path
+### Unary calls are async
 
-For short-lived unary handlers, the native bridge uses a blocking export:
+Every unary RPC uses the async envelope: the `RPC` export spawns a goroutine and
+the response is posted back through a native port, so the Dart platform (UI)
+thread never blocks. `Transport.unary` awaits readiness (`Bridge.rpcUnary`) and
+then runs `Bridge.rpc`.
 
-- Go: `//export CallSync` → `rpc.RPC().CallSync(ctx, payload)` calls the handler
-  directly (no goroutine, no port).
-- Dart: `Bridge.rpcSync` / `Bridge.rpcUnary`; `Transport.unary` uses it
-  automatically.
+> The old synchronous unary fast path (`CallSync` / `Bridge.rpcSync`) has been
+> removed: it ran handlers on the platform thread and froze the UI whenever a
+> handler was slow (network fetches, media decrypt, roster folds).
 
 Streaming, reverse calls and cancel stay on the async envelope path.
-
-> Contract: the sync path blocks the platform thread. Only use it for short
-> handlers (short DB reads/writes). Move long work to the async path.
 
 ### Packed hot path
 
@@ -337,8 +335,8 @@ The response export path is zero-copy: Dart parses directly from the
 
 ### FFI bindings are dynamic
 
-There is no ffigen. `lib/bridge/native_library.dart` resolves the four stable
-transport symbols (`InitializeDartAPI`, `RPC`, `CallSync`,
+There is no ffigen. `lib/bridge/native_library.dart` resolves the stable
+transport symbols (`InitializeDartAPI`, `RPC`,
 `FreeBytesContainer`) with `DynamicLibrary.lookupFunction`; generated per-method
 hot exports are resolved the same way at first use.
 

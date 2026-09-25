@@ -44,7 +44,6 @@ Hygiene: `go test ./...` rewrites `sqlite/testdb`; restore with
 | area | test file | what it covers | status |
 |---|---|---|---|
 | RPC dispatch | `rpc/rpc_test.go` | unary, stream ordering, Init, cancel (port-keyed + pre-cancelled), reverse calls, push, registry | good |
-| Sync unary | `rpc/rpc_test.go` | `CallSync` unary/no-handler/no-response/bad-payload | good |
 | Flow control | `rpc/flow_test.go` | gate credits, block/cancel/closed, reserved-path interception, pending credits | good |
 | FFI byte helpers | `dart_api/bridge_test.go` | `BytesToPointerAddress` round-trip, uniqueness, large payload, `PointerAddr` | partial (C-free only) |
 | Hot layout | `internal/hotlayout/hotlayout_test.go` | alignment, ordering, empty, floats, rejection of string/bytes/repeated | good |
@@ -75,7 +74,7 @@ and the Dart shared-memory Node smoke.
 | G2 | P0 | `dart_api`: `BytesToContainer`/`BytesToPointerAddress` ownership contract, including `GoDash_FreeBytesContainer` | free path lives in C (`bridge.c`); needs a live-dylib integration test |
 | G3 | P1 | `pb`: envelope round-trip for every `Request`/`Response` oneof (std and lite builds) | wire-compat guard |
 | G4 | P1 | `pb`: `(godash.hot)` extension is read correctly; `marshal_std_gen` has VT wrappers for every message | catches generator drift |
-| G5 | P1 | `rpc`: `CallSync` honours context timeout; `Call` streaming cancel mid-stream | existing cancel test is start-of-stream |
+| G5 | P1 | `rpc`: `Call` streaming cancel mid-stream; unary ctx timeout via the envelope | existing cancel test is start-of-stream |
 | G6 | P1 | `rpc`: flow gate under concurrent producers/consumers (stress) | races + missed wakeups |
 | G7 | P1 | `rpc`: unknown/oversized/negative credit payloads are ignored safely | robustness |
 | G8 | P2 | `internal/hotlayout`: reject proto3-optional, map, enum, oneof; field-number gaps | broaden the eligibility matrix |
@@ -85,7 +84,7 @@ and the Dart shared-memory Node smoke.
 
 | id | priority | test | notes |
 |---|---|---|---|
-| D1 | P0 | `bridge_native` end-to-end against a real test dylib: async unary, `rpcSync`/`rpcUnary`, response free, cancel/timeout, error responses, `Init`/ready | this is the untested core contract; feasible in `flutter test` on macOS via `DynamicLibrary.open` |
+| D1 | P0 | `bridge_native` end-to-end against a real test dylib: async unary, `rpcUnary`, response free, cancel/timeout, error responses, `Init`/ready | this is the untested core contract; feasible in `flutter test` on macOS via `DynamicLibrary.open` |
 | D2 | P0 | `bridge_native.hotRaw`: packed call, cached lookup, non-zero status → exception, missing symbol → error | |
 | D3 | P0 | `bridge_native.rpcStream` + `backpressure.block`: credits flow and the Go producer gates | requires a test backend honoring `FlowFromContext` |
 | D4 | P0 | Allocator-contract leak check under cancel/timeout (repeated calls, assert stable memory / no double-free) | P1/P4 rely on timing, not a test |
@@ -178,14 +177,14 @@ Implemented in this pass:
 | G1 | CI + local | `go test -race ./...` is clean (flow gate concurrency fixed below) |
 | G3 | `pb/envelope_test.go` | round-trip for every `Request`/`Response` oneof, truncated input |
 | G4 | `pb/envelope_test.go` | `MarshalHelper`, `(godash.hot)` extension read |
-| G5 | `rpc/rpc_test.go` | `CallSync` honours ctx timeout (streaming cancel-mid-stream still open) |
+| G5 | `rpc/rpc_test.go` | `Call` streaming cancel-mid-stream (unary ctx timeout via envelope) |
 | G6 | `rpc/flow_test.go` | concurrent `Acquire`; gate rewritten with broadcast waiters + cancel-safe waiter removal |
 | G7 | `rpc/flow_test.go` | short/zero/negative credit payloads ignored |
 | G8 | `internal/hotlayout/hotlayout_test.go` | reject enum, oneof, proto3-optional, map |
 | L1 | `cmd/godash/build_scripts_test.go` | no `ffigen`/`exported.h` in any generated script; `%!` catches fmt-arg drift |
 | C1 | `cmd/protoc-gen-go-godash/main_test.go` | `.godash.go` handler/router, `.hot.go` build tag + pack/unpack, ineligible/absent-option fallback |
 | C2 | `cmd/protoc-gen-dart-godash/main_test.go` | unary/stream clients, `backpressure` param + import, hot wrapper, push handler, options-import skip |
-| D1/D2 | `test/integration/native_bridge_test.dart` | builds the c-shared backend and drives async RPC, `CallSync`, error response, packed hot export, allocator smoke |
+| D1/D2 | `test/integration/native_bridge_test.dart` | builds the c-shared backend and drives async unary RPC, error response, packed hot export, allocator smoke |
 | D3 | `benchmark/bench` + `test/integration/native_bridge_test.dart` | block backpressure end-to-end: gated Go producer + credit control request through the real dylib |
 | D8 (partial) | `rpc/flow_test.go` | concurrent acquire |
 | C3 (Go) | `cmd/protoc-gen-go-godash/main_test.go` | generated `.hot.go` compiled with stub types via `go build` |
@@ -206,8 +205,8 @@ Still open (see §3 for ids): D6 (`transport` with a fake Bridge seam — needs 
 production seam), C3 (compile the generated **Dart** output), L3/L4 (full
 `godash new` scaffold and `prepare`/`upgrade` orchestration, which shell out to
 `flutter`/`git`), E1/E3/E5 (end-to-end scaffold + platform build matrix +
-benchmark smoke), X3 (timeout end-to-end — covered indirectly by the `CallSync`
-timeout and integration error tests). D7 remains partially open: the Go ring and
+benchmark smoke), X3 (timeout end-to-end — covered indirectly by the async
+unary timeout and integration error tests). D7 remains partially open: the Go ring and
 Dart ring logic/interop are covered, but a full browser integration test of
 `bridge_web` (rpc/rpcStream/push) is still missing because Flutter's Chrome test
 runner does not serve a cross-origin-isolated page. G2

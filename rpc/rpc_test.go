@@ -282,125 +282,6 @@ func TestCallRPCUnary(t *testing.T) {
 	}
 }
 
-func TestCallSyncUnary(t *testing.T) {
-	r := resetForTest(t)
-	SetHandleRPC(func(ctx context.Context, req *pb.RpcRequest, ch chan<- *pb.Response) {
-		if req.Path != "/echo" {
-			t.Errorf("unexpected path: %q", req.Path)
-		}
-		if string(req.Payload) != "hello" {
-			t.Errorf("unexpected payload: %q", req.Payload)
-		}
-		if ctx == nil || ctx.Err() != nil {
-			t.Errorf("handler ctx should be live")
-		}
-		ch <- &pb.Response{
-			Responses: &pb.Response_RpcResponse{
-				RpcResponse: &pb.RpcResponse{Payload: []byte("world")},
-			},
-		}
-	})
-
-	req := &pb.Request{
-		Requests: &pb.Request_RpcRequest{RpcRequest: &pb.RpcRequest{
-			Path:    "/echo",
-			Payload: []byte("hello"),
-		}},
-	}
-	payload, err := req.MarshalVT()
-	if err != nil {
-		t.Fatalf("marshal request: %v", err)
-	}
-	got, err := r.CallSync(context.Background(), payload)
-	if err != nil {
-		t.Fatalf("CallSync failed: %v", err)
-	}
-	resp := parseResponse(t, got)
-	if resp.GetRpcResponse() == nil || string(resp.GetRpcResponse().GetPayload()) != "world" {
-		t.Fatalf("unexpected response: %+v", resp)
-	}
-
-	// The sync path must not register a port-keyed cancel entry.
-	r.mu.Lock()
-	n := len(r.cancels)
-	r.mu.Unlock()
-	if n != 0 {
-		t.Fatalf("CallSync must not register cancels, got %d", n)
-	}
-}
-
-func TestCallSyncWithoutHandler(t *testing.T) {
-	r := resetForTest(t)
-	req := &pb.Request{
-		Requests: &pb.Request_RpcRequest{RpcRequest: &pb.RpcRequest{Path: "/echo"}},
-	}
-	payload, _ := req.MarshalVT()
-	_, err := r.CallSync(context.Background(), payload)
-	if err == nil || !strings.Contains(err.Error(), "RPC handler not set") {
-		t.Fatalf("expected handler not set error, got %v", err)
-	}
-}
-
-func TestCallSyncUnsupportedRequest(t *testing.T) {
-	r := resetForTest(t)
-	req := &pb.Request{
-		Requests: &pb.Request_Init{Init: &pb.Init{PushPort: 1}},
-	}
-	payload, _ := req.MarshalVT()
-	_, err := r.CallSync(context.Background(), payload)
-	if err == nil || !strings.Contains(err.Error(), "supports only RpcRequest") {
-		t.Fatalf("expected unsupported request error, got %v", err)
-	}
-}
-
-func TestCallSyncEmptyResponse(t *testing.T) {
-	r := resetForTest(t)
-	// A handler that returns without sending anything (e.g. an unimplemented
-	// path) must surface an error rather than block.
-	SetHandleRPC(func(ctx context.Context, req *pb.RpcRequest, ch chan<- *pb.Response) {})
-	req := &pb.Request{
-		Requests: &pb.Request_RpcRequest{RpcRequest: &pb.RpcRequest{Path: "/void"}},
-	}
-	payload, _ := req.MarshalVT()
-	_, err := r.CallSync(context.Background(), payload)
-	if err == nil || !strings.Contains(err.Error(), "no response") {
-		t.Fatalf("expected no response error, got %v", err)
-	}
-}
-
-func TestCallSyncBadPayload(t *testing.T) {
-	r := resetForTest(t)
-	SetHandleRPC(func(ctx context.Context, req *pb.RpcRequest, ch chan<- *pb.Response) {})
-	_, err := r.CallSync(context.Background(), []byte{0xFF, 0xFF, 0xFF, 0xFF})
-	if err == nil || !strings.Contains(err.Error(), "unmarshal request") {
-		t.Fatalf("expected unmarshal error, got %v", err)
-	}
-}
-
-func TestCallSyncHonoursContextTimeout(t *testing.T) {
-	r := resetForTest(t)
-	SetHandleRPC(func(ctx context.Context, req *pb.RpcRequest, ch chan<- *pb.Response) {
-		// Wait for cancellation rather than producing a response.
-		<-ctx.Done()
-	})
-	req := &pb.Request{
-		Requests: &pb.Request_RpcRequest{RpcRequest: &pb.RpcRequest{Path: "/slow"}},
-	}
-	payload, _ := req.MarshalVT()
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
-	defer cancel()
-
-	start := time.Now()
-	_, err := r.CallSync(ctx, payload)
-	elapsed := time.Since(start)
-	if err == nil {
-		t.Fatal("expected an error when the handler yields no response")
-	}
-	if elapsed > testTimeout {
-		t.Fatalf("CallSync did not return promptly after ctx timeout: %v", elapsed)
-	}
-}
-
 func TestCallRPCStreamOrdering(t *testing.T) {
 	resetForTest(t)
 	const n = 5
@@ -429,6 +310,63 @@ func TestCallRPCStreamOrdering(t *testing.T) {
 		if got := resp.GetRpcResponse().GetPayload(); len(got) != 1 || got[0] != byte(i) {
 			t.Fatalf("response %d out of order: %v", i, got)
 		}
+	}
+}
+
+// TestCallStreamingPathIgnoresUnaryDeadline verifies that a registered
+// streaming path is not cancelled by the caller's short unary deadline, while
+// an unregistered path still is (GUI-34). Without the exemption a long-lived
+// event subscription died after the envelope's 10s timeout.
+func TestCallStreamingPathIgnoresUnaryDeadline(t *testing.T) {
+	resetForTest(t)
+	const path = "/pb.TestStreamService/Subscribe"
+	RegisterStreamingPath(path)
+
+	release := make(chan struct{})
+	SetHandleRPC(func(ctx context.Context, req *pb.RpcRequest, ch chan<- *pb.Response) {
+		select {
+		case <-ctx.Done():
+			// Cancelled by the parent deadline: the test will observe a closed
+			// channel instead of a response.
+			return
+		case <-release:
+		}
+		ch <- &pb.Response{
+			Responses: &pb.Response_RpcResponse{
+				RpcResponse: &pb.RpcResponse{Payload: []byte{1}},
+			},
+		}
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+	ch := RPC().Call(ctx, &pb.Request{
+		Port:     20,
+		Requests: &pb.Request_RpcRequest{RpcRequest: &pb.RpcRequest{Path: path}},
+	})
+	// Outlive the parent deadline; a cancelled handler would close the channel.
+	time.Sleep(80 * time.Millisecond)
+	close(release)
+	if got := recvBytes(t, ch); len(got) == 0 {
+		t.Fatal("expected a response after the parent deadline")
+	}
+}
+
+func TestCallNonStreamingPathHonoursDeadline(t *testing.T) {
+	resetForTest(t)
+	SetHandleRPC(func(ctx context.Context, req *pb.RpcRequest, ch chan<- *pb.Response) {
+		<-ctx.Done() // the unary deadline must still cancel this handler
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+	ch := RPC().Call(ctx, &pb.Request{
+		Port:     21,
+		Requests: &pb.Request_RpcRequest{RpcRequest: &pb.RpcRequest{Path: "/pb.TestUnaryService/Method"}},
+	})
+	select {
+	case <-ch:
+	case <-time.After(testTimeout):
+		t.Fatal("non-streaming call did not honour the caller deadline")
 	}
 }
 

@@ -34,7 +34,6 @@ void main(List<String> args) async {
   final warmup = _intArg(args, 'warmup', 200);
   final payloadSize = _intArg(args, 'payload', 64);
   final libPath = _strArg(args, 'lib', 'benchmark/native/libbench.dylib');
-  final sync = _boolArg(args, 'sync', false);
   final hot = _boolArg(args, 'hot', false);
 
   final payload = _makePayload(payloadSize);
@@ -57,7 +56,7 @@ void main(List<String> args) async {
 
   // Warmup (JIT + allocator paths).
   for (var i = 0; i < warmup; i++) {
-    final bytes = await _trip(sync, lib, payload);
+    final bytes = await _roundTrip(lib, payload);
     if (!bytesEqual(bytes, payload)) {
       throw StateError('echo mismatch during warmup');
     }
@@ -66,7 +65,7 @@ void main(List<String> args) async {
   final latencies = List<double>.filled(n, 0);
   for (var i = 0; i < n; i++) {
     final sw = Stopwatch()..start();
-    final bytes = await _trip(sync, lib, payload);
+    final bytes = await _roundTrip(lib, payload);
     sw.stop();
     latencies[i] = sw.elapsedMicroseconds.toDouble();
     if (!bytesEqual(bytes, payload)) {
@@ -83,7 +82,7 @@ void main(List<String> args) async {
   final max = latencies.last;
   print('');
   print('=== Native round-trip latency (payload=$payloadSize B, n=$n, '
-      'mode=${sync ? 'sync' : 'async'}) ===');
+      'mode=async) ===');
   print('min  : ${min.toStringAsFixed(1)} us');
   print('p50  : ${p50.toStringAsFixed(1)} us');
   print('p90  : ${p90.toStringAsFixed(1)} us');
@@ -92,7 +91,7 @@ void main(List<String> args) async {
   print('mean : ${mean.toStringAsFixed(1)} us');
   final stats = <String, Object>{
     'transport': 'native',
-    'mode': sync ? 'sync' : 'async',
+    'mode': 'async',
     'iterations': n,
     'warmup': warmup,
     'payload_bytes': payloadSize,
@@ -105,12 +104,6 @@ void main(List<String> args) async {
     'mean': mean,
   };
   print('json : ${jsonEncode(stats)}');
-}
-
-// _trip selects the sync fast path (CallSync, PLAN.md P2) or the async
-// envelope path for one echo round trip.
-FutureOr<Uint8List> _trip(bool sync, NativeLibrary lib, Uint8List payload) {
-  return sync ? _roundTripSync(lib, payload) : _roundTrip(lib, payload);
 }
 
 // ffi.Int32 is used (not the bare Int32) because package:fixnum also exports
@@ -187,26 +180,6 @@ int _roundTripHot(_HotDart fn, int value) {
     malloc.free(reqPtr);
     malloc.free(respPtr);
   }
-}
-
-// _roundTripSync performs one unary echo call through the CallSync export:
-// no goroutine, no ReceivePort, no port round trip. The response container is
-// Go-allocated and freed through the Go-exported FreeBytesContainer.
-Uint8List _roundTripSync(NativeLibrary lib, Uint8List payload) {
-  final req = Request(
-    rpcRequest: RpcRequest(path: echoPath, payload: payload),
-  );
-  final container = bytesToBytesContainerPointer(req.writeToBuffer());
-  final respPtr = lib.CallSync(container);
-  freeBytesContainerPointer(container);
-  if (respPtr.address == 0) {
-    throw StateError('CallSync returned a null response');
-  }
-  final resp = responseFromPointerAddress(respPtr.address);
-  if (resp.hasError()) {
-    throw StateError('rpc error (${resp.error.code}) ${resp.error.message}');
-  }
-  return Uint8List.fromList(resp.rpcResponse.payload);
 }
 
 // _roundTrip performs one full Dart->Go->Dart unary echo call using the same

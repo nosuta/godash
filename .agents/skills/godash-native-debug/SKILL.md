@@ -14,7 +14,7 @@ bugs are one of the following.
 Apple's linker dead-strips `//export` symbols that are only resolved at runtime.
 Every symbol the Dart bridge dlsyms must be force-linked in
 `packages/native_internal/{ios,macos}/native_internal/Package.swift`:
-`_InitializeDartAPI`, `_RPC`, `_CallSync`, `_FreeBytesContainer`. Per-project
+`_InitializeDartAPI`, `_RPC`, `_FreeBytesContainer`. Per-project
 hot-path exports (`Service_Method`) are injected by the CLI into the
 materialised `.godash/native_internal/*/Package.swift` at the
 `//GODASH_HOT_LINKER_FLAGS` marker.

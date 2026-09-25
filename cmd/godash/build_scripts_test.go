@@ -138,7 +138,7 @@ func TestPrepareEntitlementsAvoidRestrictedKeychain(t *testing.T) {
 // package must force-link every one of them or the linker dead-strips them
 // (e.g. "Failed to lookup symbol 'FreeBytesContainer'").
 func TestNativeInternalForcesAllDartSymbols(t *testing.T) {
-	symbols := []string{"_InitializeDartAPI", "_RPC", "_CallSync", "_FreeBytesContainer"}
+	symbols := []string{"_InitializeDartAPI", "_RPC", "_FreeBytesContainer"}
 	for _, rel := range []string{
 		"../../packages/native_internal/ios/native_internal/Package.swift",
 		"../../packages/native_internal/macos/native_internal/Package.swift",

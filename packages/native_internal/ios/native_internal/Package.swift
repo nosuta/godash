@@ -30,7 +30,6 @@ let package = Package(
                 // them: force each symbol the Dart bridge resolves.
                 .unsafeFlags(["-Xlinker", "-u", "-Xlinker", "_InitializeDartAPI"]),
                 .unsafeFlags(["-Xlinker", "-u", "-Xlinker", "_RPC"]),
-                .unsafeFlags(["-Xlinker", "-u", "-Xlinker", "_CallSync"]),
                 .unsafeFlags(["-Xlinker", "-u", "-Xlinker", "_FreeBytesContainer"])//GODASH_HOT_LINKER_FLAGS
             ]
         )

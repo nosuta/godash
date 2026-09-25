@@ -95,6 +95,10 @@ Notes:
 
 ## P2 — Sync FFI unary path
 
+> **Removed.** The sync unary path was dropped: running handlers on the platform
+> thread froze the UI for slow handlers. These numbers are kept as history; the
+> `--sync` mode and `CallSync` no longer exist.
+
 Re-measured after P2 (2026-08-29): unary RPCs now use the `CallSync` export
 (`Response* CallSync(BytesContainer*)`, no goroutine, no `ReceivePort`, no port
 round trip) via `Bridge.rpcSync` / `Bridge.rpcUnary` / `Transport.unary`. The

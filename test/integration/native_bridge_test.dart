@@ -1,7 +1,7 @@
 // Native bridge integration test.
 //
 // Builds the benchmark c-shared backend and drives the real FFI surface
-// (InitializeDartAPI / RPC / CallSync / FreeBytesContainer / a packed hot
+// (InitializeDartAPI / RPC / FreeBytesContainer / a packed hot
 // export) through the same helpers the Bridge uses. This covers the allocator
 // contract (Dart allocates+frees requests, Go allocates responses, Dart frees
 // them through FreeBytesContainer), the zero-copy request path and the hot ABI.
@@ -83,16 +83,6 @@ void main() {
       expect(resp.rpcResponse.payload, payload);
     });
 
-    test('sync unary round trip (CallSync)', () {
-      final payload = Uint8List.fromList([1, 2, 3, 4, 5]);
-      final resp = _rpcSync(
-        lib,
-        Request(rpcRequest: RpcRequest(path: _echoPath, payload: payload)),
-      );
-      expect(resp.hasRpcResponse(), isTrue);
-      expect(resp.rpcResponse.payload, payload);
-    });
-
     test('error response is delivered and freed', () async {
       final resp = await _rpcAsync(
         lib,
@@ -122,7 +112,7 @@ void main() {
     test('repeated calls do not leak or corrupt (allocator smoke)', () async {
       final payload = Uint8List.fromList(List.generate(64, (i) => i));
       for (var i = 0; i < 200; i++) {
-        final resp = _rpcSync(
+        final resp = await _rpcAsync(
           lib,
           Request(rpcRequest: RpcRequest(path: _echoPath, payload: payload)),
         );
@@ -132,7 +122,7 @@ void main() {
       }
     });
 
-    test('high-volume payloads do not leak request/response containers', () {
+    test('high-volume payloads do not leak request/response containers', () async {
       final payload = Uint8List.fromList(
         List.generate(64 * 1024, (i) => i & 0xFF),
       );
@@ -142,13 +132,13 @@ void main() {
 
       // Warm up allocators/JIT so the baseline is stable.
       for (var i = 0; i < 50; i++) {
-        _rpcSync(lib, makeReq());
+        await _rpcAsync(lib, makeReq());
       }
 
       final before = ProcessInfo.currentRss;
       const iterations = 2000; // ~125 MiB of request + response churn
       for (var i = 0; i < iterations; i++) {
-        final resp = _rpcSync(lib, makeReq());
+        final resp = await _rpcAsync(lib, makeReq());
         if (resp.rpcResponse.payload.length != payload.length) {
           fail('payload mismatch at iteration $i');
         }
@@ -160,7 +150,7 @@ void main() {
       expect(
         growth,
         lessThan(96 * 1024 * 1024),
-        reason: 'RSS grew by $growth bytes over $iterations sync calls',
+        reason: 'RSS grew by $growth bytes over $iterations async calls',
       );
     });
 
@@ -248,14 +238,4 @@ Future<Response> _rpcAsync(NativeLibrary lib, Request req) {
   freeBytesContainerPointer(payload);
 
   return comp.future.timeout(const Duration(seconds: 10));
-}
-
-Response _rpcSync(NativeLibrary lib, Request req) {
-  final payload = bytesToBytesContainerPointer(req.writeToBuffer());
-  final respPtr = lib.CallSync(payload);
-  freeBytesContainerPointer(payload);
-  if (respPtr.address == 0) {
-    throw StateError('CallSync returned a null response');
-  }
-  return responseFromPointerAddress(respPtr.address);
 }
