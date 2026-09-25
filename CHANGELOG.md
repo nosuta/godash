@@ -1,3 +1,14 @@
+## 2.4.3
+
+* Removed the synchronous FFI unary path. `CallSync` / `Bridge.rpcSync` ran unary
+  handlers on the Dart platform (UI) thread, so a slow handler (network fetch,
+  media decrypt, roster fold) froze the UI. Unary calls now always use the async
+  envelope (`RPC` export → goroutine → native port), so the platform thread
+  never blocks. `Transport.unary` waits for readiness (`Bridge.rpcUnary`) and
+  delegates to `Bridge.rpc`. The `CallSync` export, `rpc.CallSync`,
+  `Bridge.rpcSync`, the `_CallSync` native binding and the `--sync` benchmark
+  mode are gone. Streaming, reverse calls and cancel were already async.
+
 ## 2.4.2
 
 * RPC server streams are no longer killed by the caller's unary deadline.
