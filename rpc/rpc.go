@@ -69,6 +69,24 @@ func Pusher() pusher.Pusher {
 	return RPC().Push
 }
 
+// streamingPaths holds the RPC paths whose handlers are long-lived server
+// streams. A stream must not inherit the caller's short unary deadline, or it
+// is cancelled mid-stream (GUI-34). Applications register their streaming
+// method paths via RegisterStreamingPath.
+var streamingPaths sync.Map // path string -> struct{}
+
+// RegisterStreamingPath marks an RPC path as a long-lived server stream. Call it
+// during application initialisation, before the stream is requested.
+func RegisterStreamingPath(path string) {
+	streamingPaths.Store(path, struct{}{})
+}
+
+// IsStreamingPath reports whether path was registered as a long-lived stream.
+func IsStreamingPath(path string) bool {
+	_, ok := streamingPaths.Load(path)
+	return ok
+}
+
 func (r *rpc) SetPusher(p func(*pb.Push, int64) error) {
 	r.mu.Lock()
 	r.pusher = func(push *pb.Push) error {
@@ -96,8 +114,15 @@ func (r *rpc) Call(ctx context.Context, req *pb.Request) chan []byte {
 	}
 
 	go func() {
+		// Streams are long-lived by design: drop the caller's unary deadline so
+		// the 10s timeout used by the async envelope cannot kill a subscription
+		// mid-stream. Cancellation still works through Cancel/ctx.
+		base := ctx
+		if rr := req.GetRpcRequest(); rr != nil && IsStreamingPath(rr.Path) {
+			base = context.WithoutCancel(ctx)
+		}
 		r.mu.Lock()
-		ctx, r.cancels[req.Port] = context.WithCancel(ctx)
+		ctx, r.cancels[req.Port] = context.WithCancel(base)
 		r.mu.Unlock()
 		defer func() {
 			var remained []int64
