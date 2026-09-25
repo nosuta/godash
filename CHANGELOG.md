@@ -1,4 +1,4 @@
-## Unreleased
+## 2.4.0
 
 * Web bridge auto-restarts a dead worker. A TinyGo release worker builds with
   `-panic=trap`, so a JS exception from a `syscall/js` call traps the wasm
