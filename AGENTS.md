@@ -4,7 +4,7 @@ Guidance for AI coding agents working in the **godash** repository.
 
 godash is a Flutter + Go/TinyGo bridge core: a protobuf-enveloped FFI/Web-Worker
 transport, code generators, a SQLite abstraction, and layered performance paths
-(async envelope → sync unary → packed hot path). See `README.md` for the user
+(async envelope → packed hot path). See `README.md` for the user
 view and `PLAN.md` for the performance roadmap.
 
 ## Ground rules
@@ -52,7 +52,6 @@ node /tmp/shared_ring_web_smoke.js
 # Native latency benchmark
 go build -buildmode=c-shared -o benchmark/native/libbench.dylib ./benchmark/native
 dart run benchmark/native/bench.dart --n 5000            # async envelope
-dart run benchmark/native/bench.dart --n 5000 --sync     # sync unary
 dart run benchmark/native/bench.dart --n 20000 --hot     # packed hot path
 ```
 
@@ -136,6 +135,11 @@ reverse calls and cancel also stay on the async path.
   byte order, total padded to the largest alignment. Both generators must use
   `internal/hotlayout` so Go and Dart agree.
 - ABI: `int32_t <Service>_<Method>(void* req, void* resp)`; `0` = OK.
+- **Synchronous by design — do not make it async.** A hot call blocks the
+  platform thread only for the handler's duration (~0.6 µs for a packed int64
+  vs ~48 µs for the async envelope, ~80x; see `benchmark/RESULTS.md`). Routing
+  it through the goroutine/native-port path would erase that win. Keep hot
+  handlers to a few µs; slow work belongs on the async unary path.
 - **cgo stays in package `main`.** The web-safe `pb` package must not import `C`:
   `go/pb/<file>.hot.go` and `go/rpc/hot_handler.go` are `//go:build !js`. The
   `//export` wrappers are generated into `go/main.go`.
@@ -270,7 +274,8 @@ See `RELEASING.md` for the full checklist. Critical couplings:
 ## Phase status
 
 Tracked in `PLAN.md`: P0 (tests), P1 (response zero-copy + allocator contract),
-P2 (sync unary), P3 (hot path), the ffigen removal, P4 (request ownership
-transfer), P5 (stream backpressure) and P6 (opt-in SharedArrayBuffer on web) are
-**done**. Update both the phase checkboxes and the status table there, and record
-benchmark deltas in `benchmark/RESULTS.md`.
+P3 (hot path), the ffigen removal, P4 (request ownership transfer), P5 (stream
+backpressure) and P6 (opt-in SharedArrayBuffer on web) are **done**. P2 (sync
+unary) was later **removed** (it froze the UI on slow handlers). Update both the
+phase checkboxes and the status table there, and record benchmark deltas in
+`benchmark/RESULTS.md`.

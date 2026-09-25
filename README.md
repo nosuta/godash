@@ -44,7 +44,6 @@ From `benchmark/RESULTS.md` (macOS arm64, 1 int64 / 64-byte payload):
 | path | round trip |
 |---|---|
 | hot (packed, int64) | mean ~0.5 µs, p99 ~1 µs |
-| sync unary (envelope, 64 B) | p50 ~14–18 µs |
 | async unary (envelope, 64 B) | p50 ~40–48 µs |
 
 Run it yourself with `benchmark/native/bench.dart` (see
@@ -240,6 +239,11 @@ enums fall back to the envelope automatically — mixed mode is fine.
 success, non-zero on error. The packed layout uses natural C alignment in
 ascending field-number order, host (little-endian) byte order.
 
+The hot path is **synchronous by design** (it blocks the platform thread only
+for the handler's duration: ~0.6 µs for a packed int64 vs ~48 µs for the async
+envelope). Keep hot handlers to a few µs; slow work belongs on a normal async
+unary method. Marking a slow handler as hot reintroduces UI-thread blocking.
+
 ### Stream backpressure
 
 Server-streaming methods accept an optional `BackpressurePolicy` that bounds how
@@ -393,7 +397,6 @@ Native latency benchmark:
 ```sh
 go build -buildmode=c-shared -o benchmark/native/libbench.dylib ./benchmark/native
 dart run benchmark/native/bench.dart --n 5000              # async envelope
-dart run benchmark/native/bench.dart --n 5000 --sync       # sync unary
 dart run benchmark/native/bench.dart --n 20000 --hot       # packed hot path
 ```
 

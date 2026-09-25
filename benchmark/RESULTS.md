@@ -11,6 +11,12 @@ Machine: macOS (darwin/arm64, Apple Silicon), Go 1.27, Dart 3.14 dev / Flutter 3
 Payload: 64 bytes. Native driver uses a fresh `ReceivePort` per call and the
 same allocation/free pattern as `lib/bridge/bridge_native.dart`.
 
+> **Note (2.4.3):** the synchronous unary fast path (`CallSync` / `Bridge.rpcSync`
+> / `--sync`) was **removed** — it ran handlers on the platform (UI) thread and
+> froze the UI on slow handlers. Rows and reproduce commands below that mention
+> `sync`/`CallSync` are historical. Unary now always uses the async envelope; the
+> packed hot path (`--hot`) is unchanged.
+
 ## Native (FFI, c-shared libbench → Go)
 
 Unit: microseconds per round trip (n=5000 after 200 warmup).
@@ -122,7 +128,8 @@ Notes:
 - Streaming, Reverse-RPC and cancel stay on the async envelope path; only
   unary calls take the sync fast path.
 
-Reproduce: `dart run benchmark/native/bench.dart --n 5000 --payload 64 --sync`.
+Reproduce: n/a — the `--sync` mode was removed with P2; unary now uses the
+default async mode above.
 
 ## P3 — Typed hot-path C exports (packed struct)
 
@@ -182,7 +189,7 @@ Notes:
   transferred buffer must already be JS-owned. Evaluated and documented in
   `lib/bridge/bridge_web.dart`.
 
-Reproduce: `dart run benchmark/native/bench.dart --n 5000 [--sync|--hot]`.
+Reproduce: `dart run benchmark/native/bench.dart --n 5000 [--hot]`.
 
 ## P6 — SharedArrayBuffer on web (opt-in)
 

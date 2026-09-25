@@ -125,8 +125,8 @@ per-method C exports taking a packed C struct, exactly like nitro's `@HybridStru
       → typed methods pack/unpack via `ByteData` and call `Transport.hotRaw`
 - [x] Regenerate `lib/bridge/native_library.g.dart` via ffigen (`godash prepare`).
       → ffigen removed entirely (follow-up): `native_library.g.dart` was replaced by a
-      hand-written `lib/bridge/native_library.dart` that resolves the four stable
-      transport symbols (`InitializeDartAPI`/`RPC`/`CallSync`/`FreeBytesContainer`)
+      hand-written `lib/bridge/native_library.dart` that resolves the stable
+      transport symbols (`InitializeDartAPI`/`RPC`/`FreeBytesContainer`)
       with `DynamicLibrary.lookupFunction`; generated hot exports were already dynamic.
       `ffigen_config.yaml`, the `godash ffi` command, the `ffigen` dev dependency and
       the `exported.h` build artifact are gone — godash projects never run ffigen.
@@ -245,7 +245,7 @@ cross-origin isolation headers. Opt-in only.
 | Risk | Mitigation |
 |---|---|
 | Ownership bugs (use-after-free, leaks) under cancel/timeout | P0 tests incl. cancel/timeout paths; P4 releases the request buffer immediately after the synchronous export, so cancel/timeout cannot leak it |
-| Sync path (P2) blocks platform thread on slow handlers | Document contract; keep async path for streams/long work |
+| Sync path (P2) blocks platform thread on slow handlers | **Resolved (2.4.3):** P2 removed; all unary is async. Do not add a synchronous unary path back |
 | P3 codegen complexity (two protoc plugins) | Mixed-mode fallback; ship per-service incrementally |
 | TinyGo wasm constraints | P3 typed exports are native-only; P6's ring uses only `syscall/js` APIs TinyGo supports (verified by a CI build) |
 | GC retention gotcha on web transfers (documented in `bridge_web.dart`) | Kept and documented (P4 evaluation); P6 references the `SharedArrayBuffer` (never transfers it) and falls back to the envelope on overflow |
