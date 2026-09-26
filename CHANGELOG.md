@@ -1,3 +1,18 @@
+## 2.4.4
+
+* `web/worker.js` no longer deadlocks the worker when a WebSocket fails to
+  connect. The shim that guards TinyGo `-panic=trap` against the browser
+  rejecting an invalid `WebSocket.close` code now delivers the close event
+  synchronously (`dispatchEvent(new CloseEvent("close", …))`) and then closes
+  for real with 1000, instead of swallowing or clamping the call. Swallowing
+  (2.3.7) or clamping (2.3.6) made `close()` return normally, so
+  `coder/websocket` blocked on its `closed` channel *inside its own `error`
+  listener*; blocking a `syscall/js` callback blocks the worker's event loop,
+  so the `close` event that would release it could never be dispatched. A
+  single unreachable relay then froze the whole worker — RPCs stopped
+  responding even though the other relays were reachable. This corrects the
+  2.3.6/2.3.7 behaviour and restores relay failover on Web.
+
 ## 2.4.3
 
 * Removed the synchronous FFI unary path. `CallSync` / `Bridge.rpcSync` ran unary
