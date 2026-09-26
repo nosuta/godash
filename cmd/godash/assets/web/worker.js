@@ -1,26 +1,43 @@
 "use strict";
 
-// Workaround for a TinyGo release-build crash. Release workers are built with
-// TinyGo -panic=trap, which cannot recover JS exceptions; a throw from a
-// syscall/js call therefore traps and kills the worker. A Go WebSocket client
-// may close a broken connection with status 1006 (abnormal closure), which the
-// browser's WebSocket.close() rejects with InvalidAccessError. Do NOT rewrite
-// the code (that would actually close a socket the caller meant to leave
-// alone, breaking reconnects): swallow the invalid call entirely. The browser
-// tears the socket down through its own error/close event, which is exactly
-// what happens when the exception propagates on a non-trapping build.
+// Workaround for a WASM crash and a worker-wide deadlock.
+//
+// The browser rejects WebSocket.close() codes other than 1000 and 3000-4999
+// with an InvalidAccessError, but Go WebSocket clients do close with 1006
+// (abnormal closure), 1011 (internal error) and others. A syscall/js call that
+// throws traps and kills a TinyGo -panic=trap release worker, so close() must
+// never throw.
+//
+// We cannot simply drop such a call either. coder/websocket calls Close() from
+// inside its own "error" event listener and then waits, still in that listener,
+// for the resulting "close" event. Blocking inside a syscall/js callback freezes
+// the worker's event loop, so the "close" event can never be delivered and the
+// waiter never returns: one failed relay hangs the whole worker, and no other
+// relay or RPC can make progress. Deliver the close event synchronously to
+// unblock the Go side, then close for real with an accepted code.
 (function () {
     if (typeof WebSocket === "undefined" || !WebSocket.prototype) return;
     const originalClose = WebSocket.prototype.close;
     WebSocket.prototype.close = function (code, reason) {
-        if (code !== undefined && code !== null &&
-            code !== 1000 && !(code >= 3000 && code <= 4999)) {
-            return;
-        }
         if (typeof reason === "string" && reason.length > 123) {
             reason = reason.slice(0, 123);
         }
-        return originalClose.call(this, code, reason);
+        if (code === undefined || code === null ||
+            code === 1000 || (code >= 3000 && code <= 4999)) {
+            return originalClose.call(this, code, reason);
+        }
+        try {
+            this.dispatchEvent(new CloseEvent("close", {
+                code: 1006,
+                reason: typeof reason === "string" ? reason : "",
+                wasClean: false,
+            }));
+        } catch (e) { /* ignore */ }
+        try {
+            return originalClose.call(this, 1000, reason);
+        } catch (e) {
+            return undefined;
+        }
     };
 })();
 
