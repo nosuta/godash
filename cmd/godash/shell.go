@@ -47,11 +47,15 @@ func runShellTask(label, cwd, script string) error {
 	}
 }
 
-// runShellPipe runs a shell script streaming stdout/stderr to the parent process.
-// Used for long-running commands (e.g. `flutter run`).
+// runShellPipe runs a shell script streaming stdin/stdout/stderr to the parent
+// process. Used for long-running commands (e.g. `flutter run`).
+//
+// Stdin must be inherited: `flutter run -d web-server` only enables its
+// interactive key commands (r/R/h/d/c/q) when stdin is a terminal.
 func runShellPipe(cwd, script string) error {
 	cmd := exec.Command("/bin/sh", "-c", script)
 	cmd.Dir = cwd
+	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
