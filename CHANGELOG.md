@@ -1,3 +1,12 @@
+## 2.4.5
+
+* `godash web run` (and `godash macos run`) again honour Flutter's interactive
+  key commands (`r`, `R`, `h`, `d`, `c`, `q`). The long-running child helper
+  streamed stdout/stderr to the parent but left `cmd.Stdin` nil, which handed
+  the child (`flutter run -d web-server`) `/dev/null` on fd 0. Flutter only
+  enables its key commands when stdin is a terminal, so they were silently
+  disabled. Stdin is now inherited from the parent process.
+
 ## 2.4.4
 
 * `web/worker.js` no longer deadlocks the worker when a WebSocket fails to
