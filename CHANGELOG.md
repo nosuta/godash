@@ -1,3 +1,16 @@
+## 2.4.6
+
+* Fixed binary response bodies being corrupted on the TinyGo Web build. The
+  `fetch` package's TinyGo path (used by `godash web build`; the standard-Go
+  `godash web run` build uses the fetch-backed `net/http` Transport) read the
+  body with `Response.text()`, which decodes the payload as UTF-8. Any
+  non-text body — images, video, or AES-GCM ciphertext fetched as bytes by a
+  handler — came back mangled (`0x89` became `ef bf bd`), so Blossom/community
+  media silently failed to render on a deployed worker while it worked
+  locally. The body is now read as an `ArrayBuffer` and copied with
+  `js.CopyBytesToGo`, matching the standard-Go path, and the
+  `marwan.io/wasm-fetch` dependency is gone.
+
 ## 2.4.5
 
 * `godash web run` (and `godash macos run`) again honour Flutter's interactive
