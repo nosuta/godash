@@ -9,7 +9,7 @@ tool (
 
 require (
 	github.com/aperturerobotics/protobuf-go-lite v0.12.2
-	github.com/nosuta/go-wasmsqlite v0.3.2
+	github.com/nosuta/go-wasmsqlite v0.4.0
 	google.golang.org/protobuf v1.36.11
 	modernc.org/sqlite v1.33.1
 )
