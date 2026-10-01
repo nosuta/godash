@@ -14,8 +14,8 @@ github.com/mattn/go-isatty v0.0.20 h1:xfD0iDuEKnDkl03q4limB+vH+GxLEtL/jb4xVJSWWE
 github.com/mattn/go-isatty v0.0.20/go.mod h1:W+V8PltTTMOvKvAeJH7IuucS94S2C6jfK/D7dTCTo3Y=
 github.com/ncruces/go-strftime v0.1.9 h1:bY0MQC28UADQmHmaF5dgpLmImcShSi2kHU9XLdhx/f4=
 github.com/ncruces/go-strftime v0.1.9/go.mod h1:Fwc5htZGVVkseilnfgOVb9mKy6w1naJmn9CehxcKcls=
-github.com/nosuta/go-wasmsqlite v0.3.2 h1:QDhWSnkB1+LxVa0Xo6TUy0CSu3HY2BXj9kIYY7qwtDw=
-github.com/nosuta/go-wasmsqlite v0.3.2/go.mod h1:aUjA1OQImNDD/TAoCOf1b+h/cH3/yBB07LvZzTurKVc=
+github.com/nosuta/go-wasmsqlite v0.4.0 h1:G7MIN9hpHrEtn73SH0xDk6LJERWPEt2nlUznf120Tms=
+github.com/nosuta/go-wasmsqlite v0.4.0/go.mod h1:aUjA1OQImNDD/TAoCOf1b+h/cH3/yBB07LvZzTurKVc=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec h1:W09IVJc94icq4NjY3clb7Lk8O1qJ8BdBEF8z0ibU0rE=

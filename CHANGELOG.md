@@ -1,3 +1,7 @@
+## 2.4.7
+
+* bumped `github.com/nosuta/go-wasmsqlite` to v0.4.0
+
 ## 2.4.6
 
 * Fixed binary response bodies being corrupted on the TinyGo Web build. The
