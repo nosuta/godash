@@ -1,4 +1,4 @@
-## Unreleased
+## 2.4.8
 
 * Web worker death is now detected and surfaced instead of hanging the app.
   Release workers build with TinyGo `-panic=trap`, whose wasm target cannot
