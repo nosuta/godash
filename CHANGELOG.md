@@ -1,4 +1,4 @@
-## Unreleased
+## 2.4.9
 
 * `godash web build` / `godash web run` now forward `--dart-define=...` and
   `--dart-define-from-file=...` to the underlying `flutter build` / `flutter
