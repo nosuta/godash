@@ -158,33 +158,36 @@ func webRunCommand() string {
 
 // webBuildShell is the target-specific shell for `godash web build` (run after
 // protobuf generation + wiring): ensure the sqlite web assets, build the TinyGo
-// worker, generate licenses, then build the Flutter bundle.
-func webBuildShell() string {
+// worker, generate licenses, then build the Flutter bundle. dartDefines is the
+// pre-quoted ` --dart-define=...` suffix forwarded from the CLI (empty for
+// none), so build-time constants reach `flutter build web`.
+func webBuildShell(dartDefines string) string {
 	return ensureSqliteWebAssetsScript() + "\n" +
 		wasmTinyGoScript() + "\n" +
 		applyGoLicensesScript() + "\n" +
-		`flutter build web --wasm --release`
+		`flutter build web --wasm --release` + dartDefines
 }
 
 // webRunShell is the target-specific shell for `godash web run` (run after
 // protobuf generation + wiring): ensure the sqlite web assets, build the Go
 // worker, then start the dev server with the cross-origin isolation headers.
-func webRunShell() string {
+// dartDefines is forwarded to `flutter run` as for webBuildShell.
+func webRunShell(dartDefines string) string {
 	return ensureSqliteWebAssetsScript() + "\n" +
 		wasmFullScript() + "\n" +
-		webRunCommand()
+		webRunCommand() + dartDefines
 }
 
 // buildScriptWebBuild returns the shell for `godash web build`.
 func buildScriptWebBuild(e *projectEnv) string {
 	return goModBootstrap() + "\n" + updateWebScript() + "\n" +
-		protoShellScript() + "\n" + webBuildShell()
+		protoShellScript() + "\n" + webBuildShell("")
 }
 
 // buildScriptWebRun returns the shell for `godash web run` (dev mode).
 func buildScriptWebRun(e *projectEnv) string {
 	return goModBootstrap() + "\n" + updateWebScript() + "\n" +
-		protoShellScript() + "\n" + webRunShell()
+		protoShellScript() + "\n" + webRunShell("")
 }
 
 // buildScriptAndroidLibArm64 builds arm64-v8a shared lib.

@@ -1,3 +1,23 @@
+## Unreleased
+
+* `godash web build` / `godash web run` now forward `--dart-define=...` and
+  `--dart-define-from-file=...` to the underlying `flutter build` / `flutter
+  run`, so a project can pass build-time constants through the CLI, e.g.
+  `godash web build --dart-define=CONCORD_SAB_RING=true`. Previously the flags
+  were silently ignored (the define never reached the app).
+* The slow-RPC watchdog now skips registered streaming paths: a long-lived
+  server stream (e.g. `EventService.Subscribe`) is expected to stay in flight,
+  so it is no longer reported as `RPC slow` and a real unary hang is not buried.
+* `Bridge.configure` accepts `useSharedMemory` / `sharedMemorySlots` /
+  `sharedMemorySlotBytes` on native too (ignored), for parity with the web
+  bridge.
+* Web stream frames are dispatched by `typeof` (`message.data.typeofEquals(
+  'number')`) for the SharedArrayBuffer ring signal, with the transferable-
+  envelope cast guarded by `isA<JSUint8Array>()`. This fixes a dart2wasm
+  (`flutter build web --wasm`) release bug: an unguarded `as JSUint8Array?` on
+  the bare-number signal throws instead of returning null, so every ring frame
+  threw an uncaught exception and was dropped.
+
 ## 2.4.8
 
 * Web worker death is now detected and surfaced instead of hanging the app.

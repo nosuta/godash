@@ -37,9 +37,17 @@ class Bridge extends ChangeNotifier {
 
   /// Configures the singleton bridge. Call once before using [Bridge].
   /// [workerUrl] is ignored on native platforms and only used on the web.
+  ///
+  /// [useSharedMemory], [sharedMemorySlots] and [sharedMemorySlotBytes] are
+  /// present for parity with the web bridge (which uses them to size the
+  /// SharedArrayBuffer stream ring) and are ignored here: native streaming
+  /// already uses zero-copy FFI, so there is no shared ring to opt into.
   static void configure({
     required Future<String> Function() appEncryptionKey,
     String? workerUrl,
+    bool useSharedMemory = false,
+    int sharedMemorySlots = 4,
+    int sharedMemorySlotBytes = 16 * 1024,
   }) {
     _config = _BridgeConfig(
       appEncryptionKey: appEncryptionKey,
@@ -75,6 +83,11 @@ class Bridge extends ChangeNotifier {
 
   /// Human-readable reason for [fatal], when known. Always null on native.
   String? get fatalReason => null;
+
+  /// False on native: the SharedArrayBuffer stream ring is web-only (native
+  /// streaming already uses zero-copy FFI). Present for parity with the web
+  /// bridge so callers can log the active transport on every platform.
+  bool get usesSharedMemory => false;
 
   static const String _libName = String.fromEnvironment(
     'LIB_NAME',

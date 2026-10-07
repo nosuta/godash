@@ -89,8 +89,8 @@ func TestWebScriptsProvideSqliteAssets(t *testing.T) {
 	for name, s := range map[string]string{
 		"web-build":       buildScriptWebBuild(e),
 		"web-run":         buildScriptWebRun(e),
-		"web-build-shell": webBuildShell(),
-		"web-run-shell":   webRunShell(),
+		"web-build-shell": webBuildShell(""),
+		"web-run-shell":   webRunShell(""),
 	} {
 		if !strings.Contains(s, "web/sqlite3.js") {
 			t.Errorf("%s must ensure the sqlite3 web assets are present:\n%s", name, s)
@@ -101,7 +101,7 @@ func TestWebScriptsProvideSqliteAssets(t *testing.T) {
 	}
 	// The dev server must be cross-origin isolated or web SQLite/OPFS fails
 	// with "OPFS is not supported".
-	if s := webRunShell(); !strings.Contains(s, "Cross-Origin-Opener-Policy=same-origin") ||
+	if s := webRunShell(""); !strings.Contains(s, "Cross-Origin-Opener-Policy=same-origin") ||
 		!strings.Contains(s, "Cross-Origin-Embedder-Policy=require-corp") {
 		t.Errorf("web run must send cross-origin isolation headers:\n%s", s)
 	}
@@ -165,5 +165,26 @@ func TestAndroidScriptsCopySharedLibrary(t *testing.T) {
 	}
 	if s := buildScriptAndroidLibX86_64(e); !strings.Contains(s, "cp go/build/android-x86_64/libgodash.so") {
 		t.Errorf("x86_64 script should copy the .so into the plugin:\n%s", s)
+	}
+}
+
+// TestWebScriptsForwardDartDefines guards that `godash web build`/`run` forward
+// --dart-define flags to flutter, so a project can enable a build-time constant
+// such as --dart-define=CONCORD_SAB_RING=true.
+func TestWebScriptsForwardDartDefines(t *testing.T) {
+	if got := dartDefineArgs([]string{"build", "--dart-define=A=1", "--other"}); got != " '--dart-define=A=1'" {
+		t.Fatalf("dartDefineArgs = %q, want the single quoted define", got)
+	}
+	if got := dartDefineArgs(nil); got != "" {
+		t.Fatalf("dartDefineArgs(nil) = %q, want empty", got)
+	}
+	defines := dartDefineArgs([]string{"--dart-define=CONCORD_SAB_RING=true"})
+	for name, s := range map[string]string{
+		"web-build": webBuildShell(defines),
+		"web-run":   webRunShell(defines),
+	} {
+		if !strings.Contains(s, "--dart-define=CONCORD_SAB_RING=true") {
+			t.Errorf("%s must forward the dart-define:\n%s", name, s)
+		}
 	}
 }

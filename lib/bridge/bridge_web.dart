@@ -69,41 +69,67 @@ class Bridge extends ChangeNotifier {
   }
 
   Bridge._() {
-    if (_config == null) {
-      throw StateError(
-        'Bridge not configured. Call Bridge.configure(...) before using Bridge().',
-      );
-    }
-    final config = _config!;
-    _log.info('web bridge instantiate');
-    final workerUrl = config.workerUrl;
-    _log.info('creating worker: $workerUrl');
-    final options = {'type': 'classic'.toJS}.jsify() as web.WorkerOptions;
-    final w = web.Worker(workerUrl.toJS, options);
-    if (!w.isDefinedAndNotNull) {
-      _log.severe('worker is not defined or null');
-    }
-    w.onmessage = _onGlobalMessage.toJS;
-    w.onerror = ((web.Event event) {
-      _markFatal('worker error: ${event.type}');
-    }).toJS;
+    try {
+      if (_config == null) {
+        throw StateError(
+          'Bridge not configured. Call Bridge.configure(...) before using Bridge().',
+        );
+      }
+      final config = _config!;
+      _log.info('web bridge instantiate');
+      final workerUrl = config.workerUrl;
+      _log.info('creating worker: $workerUrl');
+      final options = {'type': 'classic'.toJS}.jsify() as web.WorkerOptions;
+      final w = web.Worker(workerUrl.toJS, options);
+      if (!w.isDefinedAndNotNull) {
+        _log.severe('worker is not defined or null');
+      }
+      w.onmessage = _onGlobalMessage.toJS;
+      w.onerror = ((web.Event event) {
+        var detail = event.type;
+        try {
+          final jsEvent = event as JSObject;
+          Object? prop(String name) =>
+              jsEvent.getProperty<JSAny?>(name.toJS)?.dartify();
+          detail = '${prop('message')} @ ${prop('filename')}:'
+              '${prop('lineno')}:${prop('colno')}';
+        } catch (_) {
+          // Not readable; keep the type.
+        }
+        // A worker load failure hides its reason in the (opaque) error event, so
+        // fetch the script ourselves and report the status / failure.
+        final url = _config?.workerUrl ?? '';
+        web.window.fetch(url.toJS).toDart.then((web.Response resp) {
+          _markFatal(
+            'worker error: $detail; fetch $url -> ${resp.status} '
+            '${resp.headers.get('content-type')}',
+          );
+        }).catchError((Object error) {
+          _markFatal('worker error: $detail; fetch $url failed: $error');
+        });
+      }).toJS;
 
-    _worker = w;
-    _pushController = StreamController<Push>.broadcast();
+      _worker = w;
+      _pushController = StreamController<Push>.broadcast();
 
-    _sharedMemorySlots = config.sharedMemorySlots;
-    _sharedMemorySlotBytes = config.sharedMemorySlotBytes;
-    _sharedMemoryEnabled =
-        config.useSharedMemory &&
-        sharedMemorySupported &&
-        config.sharedMemorySlots > 0 &&
-        config.sharedMemorySlotBytes > kSharedRingFrameHeader &&
-        config.sharedMemorySlotBytes % 4 == 0;
-    if (config.useSharedMemory && !sharedMemorySupported) {
-      _log.warning(
-        'shared memory requested but SharedArrayBuffer is unavailable '
-        '(page is not cross-origin isolated); using the envelope',
-      );
+      _sharedMemorySlots = config.sharedMemorySlots;
+      _sharedMemorySlotBytes = config.sharedMemorySlotBytes;
+      _sharedMemoryEnabled =
+          config.useSharedMemory &&
+          sharedMemorySupported &&
+          config.sharedMemorySlots > 0 &&
+          config.sharedMemorySlotBytes > kSharedRingFrameHeader &&
+          config.sharedMemorySlotBytes % 4 == 0;
+      if (config.useSharedMemory && !sharedMemorySupported) {
+        _log.warning(
+          'shared memory requested but SharedArrayBuffer is unavailable '
+          '(page is not cross-origin isolated); using the envelope',
+        );
+      }
+    } catch (error, stack) {
+      _lastError ??= error;
+      _lastErrorStack ??= stack;
+      rethrow;
     }
   }
   factory Bridge() {
@@ -123,6 +149,12 @@ class Bridge extends ChangeNotifier {
   /// Human-readable reason for [fatal], when the worker reported one.
   String? get fatalReason => _fatalReason;
 
+  /// The first error caught while booting or handling worker messages, if any.
+  /// Diagnostics only: a wasm-only boot failure otherwise surfaces as an opaque
+  /// `FlutterErrorDetails` with no message.
+  Object? get lastError => _lastError;
+  StackTrace? get lastErrorStack => _lastErrorStack;
+
   final _log = Logger('Bridge Web');
   late final web.Worker _worker;
   late final StreamController<Push> _pushController;
@@ -134,6 +166,8 @@ class Bridge extends ChangeNotifier {
   bool _sharedMemoryEnabled = false;
   int _sharedMemorySlots = 0;
   int _sharedMemorySlotBytes = 0;
+  Object? _lastError;
+  StackTrace? _lastErrorStack;
 
   /// In-flight unary completers and streaming controllers, failed when the
   /// worker dies so a dead worker cannot leave callers awaiting forever.
@@ -241,6 +275,16 @@ class Bridge extends ChangeNotifier {
   }
 
   void _onGlobalMessage(web.MessageEvent message) {
+    try {
+      _handleGlobalMessage(message);
+    } catch (error, stack) {
+      _lastError ??= error;
+      _lastErrorStack ??= stack;
+      rethrow;
+    }
+  }
+
+  void _handleGlobalMessage(web.MessageEvent message) {
     // Never log message.data here: a Go->Dart reverse call (for example a
     // NIP-07 Nip44Decrypt payload) can be several KB, and stringifying both it
     // and its transferable buffer on every push flooded the release main thread
@@ -262,7 +306,9 @@ class Bridge extends ChangeNotifier {
       _markFatal('unsupported system (see browser logs)');
       return;
     }
-    final b = (message.data as JSUint8Array?)?.toDart;
+    final b = message.data.isA<JSUint8Array>()
+        ? (message.data as JSUint8Array).toDart
+        : null;
     if (b == null) {
       _markFatal('missing message');
       return;
@@ -274,24 +320,33 @@ class Bridge extends ChangeNotifier {
     }
 
     if (resp.hasDone()) {
-      _config!.appEncryptionKey().then((key) {
-        _log.info('app encryption key: $key');
-        final req = Request(init: Init(appEncryptionKey: key));
-        rpcUnsafe(req).then((resp) {
-          _log.info('bridge global init response');
-          if (resp.hasError()) {
-            _markFatal('bridge global error: ${resp.error.message}');
-            return;
-          }
-          if (resp.hasDone()) {
-            _log.info('worker is ready');
-            _ready = true;
-            notifyListeners();
-            return;
-          }
-          _markFatal('unknown fatal situation');
-        });
-      });
+      _config!
+          .appEncryptionKey()
+          .then((key) {
+            _log.info('app encryption key: $key');
+            final req = Request(init: Init(appEncryptionKey: key));
+            rpcUnsafe(req).then((resp) {
+              _log.info('bridge global init response');
+              if (resp.hasError()) {
+                _markFatal('bridge global error: ${resp.error.message}');
+                return;
+              }
+              if (resp.hasDone()) {
+                _log.info('worker is ready');
+                _ready = true;
+                notifyListeners();
+                return;
+              }
+              _markFatal('unknown fatal situation');
+            }).catchError((Object error, StackTrace stack) {
+              _lastError ??= error;
+              _lastErrorStack ??= stack;
+            });
+          })
+          .catchError((Object error, StackTrace stack) {
+            _lastError ??= error;
+            _lastErrorStack ??= stack;
+          });
       return;
     } else if (resp.hasPush()) {
       _pushController.sink.add(resp.push);
@@ -445,16 +500,25 @@ class Bridge extends ChangeNotifier {
     }
 
     ch.port1.onmessage = ((web.MessageEvent message) {
-      // log.info('prc stream: on message from $port');
-      if (ring != null && message.data.isA<JSNumber>()) {
-        for (final frame in ring.drain()) {
-          handle(Response.fromBuffer(frame));
+      // A ring stream signals each frame with a bare number and delivers a
+      // fallback as a transferable Uint8Array. `typeof` is the one interop check
+      // that is identical on every compiler, so use it for the signal; the
+      // envelope cast is guarded by `isA` (which the SDK documents as safe to
+      // cast after). Never cast unguarded: under dart2wasm
+      // (`flutter build web --wasm`, the release compiler) `as JSUint8Array?` on
+      // a number THROWS instead of returning null, which turned every ring
+      // signal into an uncaught exception and dropped every frame
+      // (RPC_TODO R5, WEB_WASM_NOTES.md §10).
+      if (message.data.typeofEquals('number')) {
+        if (ring != null) {
+          for (final frame in ring.drain()) {
+            handle(Response.fromBuffer(frame));
+          }
         }
         return;
       }
-      final b = (message.data as JSUint8Array?)?.toDart;
-      if (b != null) {
-        handle(Response.fromBuffer(b));
+      if (message.data.isA<JSUint8Array>()) {
+        handle(Response.fromBuffer((message.data as JSUint8Array).toDart));
       }
     }).toJS;
 

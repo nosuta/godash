@@ -88,6 +88,13 @@ func (r *rpc) watchSlowRPCs() {
 			if now.Sub(info.start) < slowRPCWarnAfter || r.warnedSlow[port] {
 				continue
 			}
+			// A streaming RPC is long-lived by design (Call drops its unary
+			// deadline), so it is expected to stay in flight forever and is
+			// never "slow". Only unary requests that should have completed are
+			// reported, so a real hang is not buried under live subscriptions.
+			if IsStreamingPath(info.path) {
+				continue
+			}
 			r.warnedSlow[port] = true
 			report = append(report, slow{port: port, info: info})
 		}

@@ -41,6 +41,25 @@ func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
 }
 
+// dartDefineArgs forwards any --dart-define / --dart-define-from-file flags from
+// a godash subcommand to the underlying `flutter build`/`run`, so a project can
+// pass build-time constants through godash, e.g.
+// `godash web build --dart-define=CONCORD_SAB_RING=true`. Each flag is shell
+// quoted because the generated script is run by a shell.
+func dartDefineArgs(args []string) string {
+	var flags []string
+	for _, arg := range args {
+		if strings.HasPrefix(arg, "--dart-define=") ||
+			strings.HasPrefix(arg, "--dart-define-from-file=") {
+			flags = append(flags, shellQuote(arg))
+		}
+	}
+	if len(flags) == 0 {
+		return ""
+	}
+	return " " + strings.Join(flags, " ")
+}
+
 // runWeb handles `godash web [build|run]` (default: build).
 func runWeb(args []string) {
 	env, err := loadProjectEnv("")
@@ -48,9 +67,14 @@ func runWeb(args []string) {
 		fatalf("%v", err)
 	}
 	mode := "build"
+	rest := []string{}
 	if len(args) > 0 {
 		mode = args[0]
+		rest = args[1:]
 	}
+	// Forward --dart-define / --dart-define-from-file to flutter build/run, so
+	// e.g. `godash web build --dart-define=CONCORD_SAB_RING=true` reaches the app.
+	defines := dartDefineArgs(rest)
 	_ = ensureWebAssets(env.Root)
 	if err := runProtoAndWiring(env); err != nil {
 		os.Exit(1)
@@ -61,12 +85,12 @@ func runWeb(args []string) {
 		defer cleanupLicenses()
 		// Proto + wiring are already done by runProtoAndWiring; webBuildShell
 		// adds the sqlite assets, the TinyGo worker, licenses and the bundle.
-		script := envShell(env) + "\n" + licensesLine + webBuildShell()
+		script := envShell(env) + "\n" + licensesLine + webBuildShell(defines)
 		if err := runShellTask("Build for web", env.Root, script); err != nil {
 			os.Exit(1)
 		}
 	case "run":
-		script := envShell(env) + "\n" + webRunShell()
+		script := envShell(env) + "\n" + webRunShell(defines)
 		if err := runShellPipe(env.Root, script); err != nil {
 			fmt.Fprintf(os.Stderr, "web run exited with code %d\n", errExit(err))
 			os.Exit(errExit(err))
