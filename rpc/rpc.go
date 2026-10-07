@@ -5,10 +5,26 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/nosuta/godash/v2/pb"
 	"github.com/nosuta/godash/v2/pusher"
 )
+
+// slowRPCWarnAfter is how long a request may be in flight before the watchdog
+// reports it. A frontend awaiting such a request appears frozen, so surfacing
+// the port/path is what lets a live hang be identified without a profiler.
+const slowRPCWarnAfter = 10 * time.Second
+
+// slowRPCWarnInterval is the watchdog's scan period.
+const slowRPCWarnInterval = 5 * time.Second
+
+// inflightRequest records one in-flight request so it can be timed and reported.
+type inflightRequest struct {
+	kind  string
+	path  string
+	start time.Time
+}
 
 var instance *rpc
 
@@ -27,6 +43,12 @@ type rpc struct {
 	// gate was registered, keyed by stream port.
 	pendingFlowCredits map[int64]int
 	flowMu             sync.Mutex
+	// inflight tracks in-flight requests (keyed by port) for the completion
+	// timing log and the slow-RPC watchdog. Guarded by mu.
+	inflight map[int64]inflightRequest
+	// warnedSlow marks ports the watchdog already reported, so a stalled request
+	// is logged once rather than every tick. Guarded by mu.
+	warnedSlow map[int64]bool
 }
 
 func RPC() *rpc {
@@ -38,10 +60,47 @@ func RPC() *rpc {
 		reversePending:     make(map[int64]chan []byte),
 		flowGates:          make(map[int64]*FlowGate),
 		pendingFlowCredits: make(map[int64]int),
+		inflight:           make(map[int64]inflightRequest),
+		warnedSlow:         make(map[int64]bool),
 	}
 	pb.SetReverseCallFn(instance.ReverseCall)
 	pb.SetPushFn(instance.Push)
+	go instance.watchSlowRPCs()
 	return instance
+}
+
+// watchSlowRPCs reports requests that stay in flight past slowRPCWarnAfter. A
+// frontend that awaits such a request cannot recover on its own, so a WARN
+// naming the port, kind and path is the diagnostic that identifies the hang.
+// It runs at WARN level, so it stays visible in release builds.
+func (r *rpc) watchSlowRPCs() {
+	ticker := time.NewTicker(slowRPCWarnInterval)
+	defer ticker.Stop()
+	for range ticker.C {
+		now := time.Now()
+		type slow struct {
+			port int64
+			info inflightRequest
+		}
+		var report []slow
+		r.mu.Lock()
+		for port, info := range r.inflight {
+			if now.Sub(info.start) < slowRPCWarnAfter || r.warnedSlow[port] {
+				continue
+			}
+			r.warnedSlow[port] = true
+			report = append(report, slow{port: port, info: info})
+		}
+		r.mu.Unlock()
+		for _, s := range report {
+			slog.Warn("RPC slow",
+				"port", s.port,
+				"kind", s.info.kind,
+				"path", s.info.path,
+				"elapsed", now.Sub(s.info.start).Round(time.Second).String(),
+			)
+		}
+	}
 }
 
 // entryPoint is called during the Init request to initialize the application layer.
@@ -121,8 +180,11 @@ func (r *rpc) Call(ctx context.Context, req *pb.Request) chan []byte {
 		if rr := req.GetRpcRequest(); rr != nil && IsStreamingPath(rr.Path) {
 			base = context.WithoutCancel(ctx)
 		}
+		kind, path := requestMeta(req)
+		info := inflightRequest{kind: kind, path: path, start: time.Now()}
 		r.mu.Lock()
 		ctx, r.cancels[req.Port] = context.WithCancel(base)
+		r.inflight[req.Port] = info
 		r.mu.Unlock()
 		defer func() {
 			var remained []int64
@@ -131,19 +193,27 @@ func (r *rpc) Call(ctx context.Context, req *pb.Request) chan []byte {
 				cancel()
 				delete(r.cancels, req.Port)
 			}
+			delete(r.inflight, req.Port)
+			delete(r.warnedSlow, req.Port)
 			for k := range r.cancels {
 				remained = append(remained, k)
 			}
 			r.mu.Unlock()
-			slog.Info("remained ports in cancels", "list", remained)
+			slog.Debug("remained ports in cancels", "list", remained)
+			slog.Debug("RPC done",
+				"port", req.Port,
+				"kind", info.kind,
+				"path", info.path,
+				"ms", time.Since(info.start).Milliseconds(),
+			)
 			close(ch)
 		}()
 
-		slog.Info("RPC handle request", "port", req.Port)
+		slog.Debug("RPC handle request", "port", req.Port)
 
 		switch v := req.Requests.(type) {
 		case *pb.Request_Cancel:
-			slog.Info("request: cancel")
+			slog.Debug("request: cancel")
 			targetPort := req.GetCancel().Port
 			r.mu.Lock()
 			if cancel, ok := r.cancels[targetPort]; ok {
@@ -152,7 +222,7 @@ func (r *rpc) Call(ctx context.Context, req *pb.Request) chan []byte {
 			}
 			r.mu.Unlock()
 		case *pb.Request_Init:
-			slog.Info("request: init")
+			slog.Debug("request: init")
 			r.nativePushPort = v.Init.GetPushPort()
 			aek := v.Init.GetAppEncryptionKey()
 			databasePath := "/database.db"
@@ -160,7 +230,7 @@ func (r *rpc) Call(ctx context.Context, req *pb.Request) chan []byte {
 			if supportDir != "" {
 				databasePath = supportDir + databasePath
 			}
-			slog.Info("databasePath", "path", databasePath)
+			slog.Debug("databasePath", "path", databasePath)
 			if entryPoint == nil {
 				sendError(ch, fmt.Errorf("entry point not set"), 500)
 				break
@@ -198,7 +268,7 @@ func (r *rpc) Call(ctx context.Context, req *pb.Request) chan []byte {
 			}
 			r.unregisterFlowGate(req.Port, gate)
 		case *pb.Request_ReverseResponse:
-			slog.Info("request: reverse_response", "port", v.ReverseResponse.ReversePort)
+			slog.Debug("request: reverse_response", "port", v.ReverseResponse.ReversePort)
 			r.receiveReverseResponse(v.ReverseResponse.ReversePort, v.ReverseResponse.Payload)
 		default:
 			err := fmt.Errorf("unsupported request: %T", v)
@@ -207,6 +277,23 @@ func (r *rpc) Call(ctx context.Context, req *pb.Request) chan []byte {
 	}()
 
 	return ch
+}
+
+// requestMeta labels a request for the completion timing log and the slow-RPC
+// watchdog: the RPC path when there is one, else the envelope kind.
+func requestMeta(req *pb.Request) (kind, path string) {
+	switch v := req.Requests.(type) {
+	case *pb.Request_RpcRequest:
+		return "rpc", v.RpcRequest.Path
+	case *pb.Request_Init:
+		return "init", ""
+	case *pb.Request_Cancel:
+		return "cancel", ""
+	case *pb.Request_ReverseResponse:
+		return "reverse_response", ""
+	default:
+		return "unknown", ""
+	}
 }
 
 func sendError(ch chan<- []byte, err error, code int32) {

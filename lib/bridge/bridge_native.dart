@@ -20,8 +20,7 @@ import 'backpressure.dart';
 // an Int32 class, which otherwise shadows dart:ffi's native type.
 typedef _HotNative =
     ffi.Int32 Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Void>);
-typedef _HotDart =
-    int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Void>);
+typedef _HotDart = int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Void>);
 
 /// Configuration for the native [Bridge].
 /// Must be set via [Bridge.configure] before the first [Bridge] access.
@@ -29,10 +28,7 @@ class _BridgeConfig {
   final Future<String> Function() appEncryptionKey;
   final String? workerUrl;
 
-  _BridgeConfig({
-    required this.appEncryptionKey,
-    this.workerUrl,
-  });
+  _BridgeConfig({required this.appEncryptionKey, this.workerUrl});
 }
 
 class Bridge extends ChangeNotifier {
@@ -70,6 +66,15 @@ class Bridge extends ChangeNotifier {
   }
 
   bool get ready => _ready;
+
+  /// True once the native bridge has failed unrecoverably. Present for parity
+  /// with the web bridge so the app can consult it on every platform; a native
+  /// engine never dies the way a TinyGo web worker does, so it stays false
+  /// except after an explicit init failure.
+  bool get fatal => _fatal;
+
+  /// Human-readable reason for [fatal], when known. Always null on native.
+  String? get fatalReason => null;
 
   static const String _libName = String.fromEnvironment(
     'LIB_NAME',

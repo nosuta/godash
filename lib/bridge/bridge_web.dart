@@ -14,6 +14,14 @@ import 'package:godash/bridge/backpressure.dart';
 import 'package:godash/bridge/shared_ring.dart';
 import 'package:godash/bridge/shared_ring_web.dart';
 
+/// Prefix the web worker's bootstrap (worker.js) uses to report a fatal worker
+/// condition on the global postMessage channel. A release worker builds with
+/// TinyGo -panic=trap, whose wasm target cannot recover a panic or a
+/// syscall/js exception, so the Go program can stop without answering another
+/// RPC. The report turns that silent death into [Bridge.fatal] plus failed
+/// in-flight requests, so the frontend can prompt a reload instead of hanging.
+const _kWorkerFatalPrefix = '__godash_worker_fatal__ ';
+
 /// Configuration for the web [Bridge].
 /// Must be set via [Bridge.configure] before the first [Bridge] access.
 class _BridgeConfig {
@@ -77,8 +85,7 @@ class Bridge extends ChangeNotifier {
     }
     w.onmessage = _onGlobalMessage.toJS;
     w.onerror = ((web.Event event) {
-      _log.shout('worker error: ${event.type}');
-      _fatal = true;
+      _markFatal('worker error: ${event.type}');
     }).toJS;
 
     _worker = w;
@@ -86,7 +93,8 @@ class Bridge extends ChangeNotifier {
 
     _sharedMemorySlots = config.sharedMemorySlots;
     _sharedMemorySlotBytes = config.sharedMemorySlotBytes;
-    _sharedMemoryEnabled = config.useSharedMemory &&
+    _sharedMemoryEnabled =
+        config.useSharedMemory &&
         sharedMemorySupported &&
         config.sharedMemorySlots > 0 &&
         config.sharedMemorySlotBytes > kSharedRingFrameHeader &&
@@ -106,6 +114,15 @@ class Bridge extends ChangeNotifier {
   bool get ready => _ready;
   Stream<Push> get push => _pushController.stream;
 
+  /// True once the worker has died unrecoverably: a Go panic/exited main
+  /// goroutine, a syscall/js trap, or a worker `error` event. Once fatal, every
+  /// RPC fails immediately and in-flight requests are completed with an error,
+  /// so callers never wait forever on a dead worker.
+  bool get fatal => _fatal;
+
+  /// Human-readable reason for [fatal], when the worker reported one.
+  String? get fatalReason => _fatalReason;
+
   final _log = Logger('Bridge Web');
   late final web.Worker _worker;
   late final StreamController<Push> _pushController;
@@ -113,9 +130,15 @@ class Bridge extends ChangeNotifier {
   Int64 _port = Int64(0);
   bool _ready = false;
   bool _fatal = false;
+  String? _fatalReason;
   bool _sharedMemoryEnabled = false;
   int _sharedMemorySlots = 0;
   int _sharedMemorySlotBytes = 0;
+
+  /// In-flight unary completers and streaming controllers, failed when the
+  /// worker dies so a dead worker cannot leave callers awaiting forever.
+  final Set<Completer<Response>> _pendingUnary = {};
+  final Set<StreamController<Response>> _pendingStreams = {};
 
   /// True when streaming RPCs use the shared-memory ring (P6). Requires the
   /// page to be cross-origin isolated and the caller to opt in.
@@ -126,6 +149,35 @@ class Bridge extends ChangeNotifier {
     _pushController.close();
     _worker.terminate();
     super.dispose();
+  }
+
+  /// Transitions the bridge to its fatal state: logs the reason, completes
+  /// every in-flight unary request and stream with an error, and notifies
+  /// listeners so the app can surface a reload prompt. Idempotent: the first
+  /// reason wins, so a later generic report does not mask the specific one.
+  void _markFatal(String reason) {
+    if (_fatal) {
+      return;
+    }
+    _fatal = true;
+    _fatalReason = reason;
+    _log.shout('worker fatal: $reason');
+    final pending = List<Completer<Response>>.of(_pendingUnary);
+    _pendingUnary.clear();
+    for (final comp in pending) {
+      if (!comp.isCompleted) {
+        comp.completeError(StateError('worker fatal: $reason'));
+      }
+    }
+    final streams = List<StreamController<Response>>.of(_pendingStreams);
+    _pendingStreams.clear();
+    for (final controller in streams) {
+      if (!controller.isClosed) {
+        controller.addError(StateError('worker fatal: $reason'));
+        controller.close();
+      }
+    }
+    notifyListeners();
   }
 
   Int64 _nextPort() {
@@ -189,22 +241,35 @@ class Bridge extends ChangeNotifier {
   }
 
   void _onGlobalMessage(web.MessageEvent message) {
-    _log.info('_onGlobalMessage: ${message.data}');
+    // Never log message.data here: a Go->Dart reverse call (for example a
+    // NIP-07 Nip44Decrypt payload) can be several KB, and stringifying both it
+    // and its transferable buffer on every push flooded the release main thread
+    // and starved the UI. Diagnostic only, so it lives at config (shown in
+    // debug builds, suppressed at the INFO release level).
+    _log.config('_onGlobalMessage');
+    // The worker's JS bootstrap reports a death (panic, trap, unhandled
+    // rejection, failed import) as a plain prefixed string on this channel.
+    if (!message.isUndefinedOrNull && message.data.isA<JSString>()) {
+      final text = (message.data as JSString).toDart;
+      if (text.startsWith(_kWorkerFatalPrefix)) {
+        _markFatal(text.substring(_kWorkerFatalPrefix.length));
+      } else {
+        _markFatal('unexpected worker message: $text');
+      }
+      return;
+    }
     if (message.isUndefinedOrNull || message.data.isUndefinedOrNull) {
-      _log.shout('unsupported system (see browser logs)');
-      _fatal = true;
+      _markFatal('unsupported system (see browser logs)');
       return;
     }
     final b = (message.data as JSUint8Array?)?.toDart;
     if (b == null) {
-      _log.shout('missing message');
-      _fatal = true;
+      _markFatal('missing message');
       return;
     }
     final resp = Response.fromBuffer(b);
     if (resp.hasError()) {
-      _log.shout('bridge global error: ${resp.error.message}');
-      _fatal = true;
+      _markFatal('bridge global error: ${resp.error.message}');
       return;
     }
 
@@ -215,8 +280,7 @@ class Bridge extends ChangeNotifier {
         rpcUnsafe(req).then((resp) {
           _log.info('bridge global init response');
           if (resp.hasError()) {
-            _log.shout('bridge global error: ${resp.error.message}');
-            _fatal = true;
+            _markFatal('bridge global error: ${resp.error.message}');
             return;
           }
           if (resp.hasDone()) {
@@ -225,8 +289,7 @@ class Bridge extends ChangeNotifier {
             notifyListeners();
             return;
           }
-          _log.shout('unknown fatal situation');
-          _fatal = true;
+          _markFatal('unknown fatal situation');
         });
       });
       return;
@@ -234,8 +297,7 @@ class Bridge extends ChangeNotifier {
       _pushController.sink.add(resp.push);
       return;
     }
-    _log.shout('unknown fatal situation');
-    _fatal = true;
+    _markFatal('unknown fatal situation');
   }
 
   Future<void> _waitReady() async {
@@ -244,7 +306,7 @@ class Bridge extends ChangeNotifier {
     int count = 0;
     await Future.doWhile(() async {
       if (_fatal) {
-        throw Exception('failed to launch root worker');
+        throw StateError('worker fatal: ${_fatalReason ?? 'unknown'}');
       }
       if (ready) {
         return false;
@@ -261,11 +323,16 @@ class Bridge extends ChangeNotifier {
   }
 
   Future<Response> rpcUnsafe(Request req) async {
+    if (_fatal) {
+      throw StateError('worker fatal: ${_fatalReason ?? 'unknown'}');
+    }
     final comp = Completer<Response>();
+    _pendingUnary.add(comp);
     req.port = _nextPort();
     final ch = web.MessageChannel();
 
     ch.port1.onmessage = ((web.MessageEvent message) {
+      _pendingUnary.remove(comp);
       if (comp.isCompleted) {
         _log.severe('port is used after completed: $req.port');
         ch.port2.close();
@@ -291,7 +358,7 @@ class Bridge extends ChangeNotifier {
 
     final (view, ab) = _toTransferableBuffer(req.writeToBuffer());
     final (m, t) = _buildWorkerMessage(ch.port2, view, ab);
-    _log.info('rpc post message');
+    _log.config('rpc post message');
     _worker.postMessage(m, t);
     return comp.future;
   }
@@ -339,8 +406,9 @@ class Bridge extends ChangeNotifier {
     await _waitReady();
 
     final controller = StreamController<Response>();
+    _pendingStreams.add(controller);
     final port = _nextPort();
-    _log.info('rpc stream: $port');
+    _log.config('rpc stream: $port');
     req.port = port;
     final ch = web.MessageChannel();
 
@@ -366,10 +434,11 @@ class Bridge extends ChangeNotifier {
         return;
       }
       if (resp.hasDone()) {
+        _pendingStreams.remove(controller);
         ch.port2.close();
         ch.port1.close();
         controller.close();
-        _log.info('rpc stream: done $port');
+        _log.config('rpc stream: done $port');
         return;
       }
       controller.sink.add(resp);
@@ -390,11 +459,12 @@ class Bridge extends ChangeNotifier {
     }).toJS;
 
     controller.onListen = () {
-      _log.info('rpc stream: on listen to $port');
+      _log.config('rpc stream: on listen to $port');
     };
 
     controller.onCancel = () async {
-      _log.info('rpc stream: on cancel $port');
+      _log.config('rpc stream: on cancel $port');
+      _pendingStreams.remove(controller);
       // Close ports immediately to release MessageChannel resources,
       // regardless of whether Go sends Done.
       ch.port1.onmessage = null;
@@ -416,7 +486,7 @@ class Bridge extends ChangeNotifier {
       slots: _sharedMemorySlots,
       slotBytes: _sharedMemorySlotBytes,
     );
-    _log.info('rpc stream: post message to $port');
+    _log.config('rpc stream: post message to $port');
     _worker.postMessage(m, t);
 
     final policy = backpressure;

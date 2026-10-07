@@ -1,3 +1,35 @@
+## Unreleased
+
+* Web worker death is now detected and surfaced instead of hanging the app.
+  Release workers build with TinyGo `-panic=trap`, whose wasm target cannot
+  recover a panic or a `syscall/js` exception, so a Go panic or a trapped JS
+  call stops every RPC with no reply and the frontend waits forever. The
+  embedded `web/worker.js` now reports the two definitive terminal signals —
+  `go.run` resolving (the Go main goroutine stopped) and `go.run` rejecting
+  (an unrecovered exception/trap) — plus start-up failures, on a reserved
+  `postMessage` prefix. `bridge_web.dart` turns that report into `Bridge.fatal`
+  / `Bridge.fatalReason`, fails in-flight unary requests and streams with a
+  `StateError`, and notifies listeners so the app can show a reload prompt.
+  * The `self.onerror` / `self.onunhandledrejection` hooks and a
+    `WebSocket.prototype.send` wrapper were prototyped but **removed**: they run
+    on benign, non-fatal conditions and on the relay hot path, and are not
+    needed for detection.
+* The RPC layer now times requests and reports a stuck one. Every request logs
+  a `Debug` completion line (port, kind, path, ms), and a watchdog logs a WARN
+  (`RPC slow`) for any request in flight longer than 10s — the diagnostic that
+  names the RPC a frozen frontend is waiting on. The hot per-request INFO logs
+  (`RPC handle request`, `remained ports in cancels`,
+  `request: cancel/init/reverse_response`) are now `Debug`, so a release build
+  stays quiet. `godash web run` builds with `-tags debug` (`wasmFullScript`), so
+  the dev worker selects the Debug slog level and keeps them.
+* The web bridge no longer stringifies every global message on the hot path.
+  `_onGlobalMessage` logged the full message payload at INFO, so a multi-KB
+  Go->Dart reverse call (for example a NIP-07 Nip44Decrypt payload) turned into
+  a tens-of-KB console string on every push; with DevTools open this flooded the
+  release main thread and starved the UI. `_onGlobalMessage` and the per-RPC /
+  per-stream lifecycle logs are now `config` (shown in debug builds, suppressed
+  at the INFO release level); only the once-per-startup lines stay at INFO.
+
 ## 2.4.7
 
 * bumped `github.com/nosuta/go-wasmsqlite` to v0.4.0

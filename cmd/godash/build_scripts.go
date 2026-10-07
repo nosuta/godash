@@ -263,10 +263,13 @@ func wasmExecTinyGoScript() string {
 	return `cp tinygo_wasm_exec.js web/wasm_exec.js`
 }
 
-// wasmFullScript builds the WASM worker using the standard Go compiler.
+// wasmFullScript builds the WASM worker using the standard Go compiler. The
+// `debug` tag selects the debug main variant (slog.LevelDebug), so `godash web
+// run` keeps the verbose per-RPC logs while the TinyGo release build stays at
+// INFO and the noisy ones (now Debug) are suppressed.
 func wasmFullScript() string {
 	return wasmExecScript() + "\n" + `go mod -C go download
-GOOS=js GOARCH=wasm go build -C go -ldflags='-w -s' -o ../web/worker.wasm
+GOOS=js GOARCH=wasm go build -C go -tags debug -ldflags='-w -s' -o ../web/worker.wasm
 ` + updateGoBuildVersionScript() + "\n" + updateGoBuildVersionWebScript()
 }
 
