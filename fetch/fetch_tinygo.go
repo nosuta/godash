@@ -96,6 +96,97 @@ func Fetch(ctx context.Context, url string) ([]byte, error) {
 	}
 }
 
+// Put performs a PUT with a binary body using the browser Fetch API and returns
+// the response body as raw bytes. It is the upload counterpart to Fetch: the
+// TinyGo release build has no net/http Transport, so a Blossom upload must go
+// through the browser too. headers are added verbatim (for the Blossom
+// Authorization token).
+func Put(ctx context.Context, url, contentType string, body []byte, headers map[string]string) ([]byte, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	opts := js.Global().Get("Object").New()
+	opts.Set("method", "PUT")
+	opts.Set("credentials", "same-origin")
+	hdr := js.Global().Get("Object").New()
+	if contentType != "" {
+		hdr.Set("Content-Type", contentType)
+	}
+	for k, v := range headers {
+		hdr.Set(k, v)
+	}
+	opts.Set("headers", hdr)
+	// Wrap the bytes in a Uint8Array over a fresh ArrayBuffer: passing the Go
+	// slice directly is not accepted by fetch.
+	view := uint8Array.New(len(body))
+	js.CopyBytesToJS(view, body)
+	opts.Set("body", view)
+
+	abort := js.Global().Get("AbortController")
+	if !abort.IsUndefined() {
+		abort = abort.New()
+		opts.Set("signal", abort.Get("signal"))
+	}
+
+	bodyCh := make(chan []byte, 1)
+	errCh := make(chan error, 1)
+
+	var (
+		success, failure         js.Func
+		bodySuccess, bodyFailure js.Func
+	)
+
+	success = js.FuncOf(func(this js.Value, args []js.Value) any {
+		success.Release()
+		failure.Release()
+
+		resp := args[0]
+		status := resp.Get("status").Int()
+		bodySuccess = js.FuncOf(func(this js.Value, args []js.Value) any {
+			bodySuccess.Release()
+			bodyFailure.Release()
+
+			res := uint8Array.New(args[0])
+			out := make([]byte, res.Get("byteLength").Int())
+			js.CopyBytesToGo(out, res)
+			if status < 200 || status >= 300 {
+				errCh <- fmt.Errorf("put failed: %d %s", status, string(out))
+				return nil
+			}
+			bodyCh <- out
+			return nil
+		})
+		bodyFailure = js.FuncOf(func(this js.Value, args []js.Value) any {
+			bodySuccess.Release()
+			bodyFailure.Release()
+			errCh <- fmt.Errorf("put body: %s", jsError(args[0]))
+			return nil
+		})
+		resp.Call("arrayBuffer").Call("then", bodySuccess, bodyFailure)
+		return nil
+	})
+	failure = js.FuncOf(func(this js.Value, args []js.Value) any {
+		success.Release()
+		failure.Release()
+		errCh <- fmt.Errorf("put: %s", jsError(args[0]))
+		return nil
+	})
+	js.Global().Call("fetch", url, opts).Call("then", success, failure)
+
+	select {
+	case out := <-bodyCh:
+		return out, nil
+	case err := <-errCh:
+		return nil, err
+	case <-ctx.Done():
+		if !abort.IsUndefined() {
+			abort.Call("abort")
+		}
+		return nil, ctx.Err()
+	}
+}
+
 // jsError renders a thrown JS value (usually an Error) as a message, appending
 // its cause when present.
 func jsError(v js.Value) string {
