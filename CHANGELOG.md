@@ -1,3 +1,11 @@
+## 2.4.10
+
+* `fetch.Put(ctx, url, contentType, body, headers)` uploads a binary body with
+  request headers on both platforms: `net/http` on native and the browser Fetch
+  API on Web/TinyGo. It is the upload counterpart to `fetch.Fetch`, so a project
+  can PUT a blob (for example to a Blossom server) from the worker without
+  pulling in a transport that does not exist on js/wasm.
+
 ## 2.4.9
 
 * `godash web build` / `godash web run` now forward `--dart-define=...` and
