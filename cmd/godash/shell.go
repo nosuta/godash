@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"time"
 
 	"github.com/nosuta/godash/v2/cmd/godash/assets"
@@ -75,20 +76,32 @@ func runShellSimple(cwd, script string) (string, error) {
 // pubspec.yaml) is substituted into index.html.
 //
 // This is idempotent and safe to call from any build entry point
-// (godash prepare, godash web, etc.).
+// (godash prepare, godash web, etc.). Host files a project has customised are
+// left alone; the current godash template is written next to them as
+// <file>.godash and a note is printed.
 func ensureWebAssets(projectRoot string) error {
 	title := readAppTitle(projectRoot)
 	if title == "" {
 		title = "godash app"
 	}
-	if err := assets.ExtractWeb(projectRoot, title); err != nil {
+	preserved, err := assets.ExtractWeb(projectRoot, title)
+	if err != nil {
 		return fmt.Errorf("extract web assets: %w", err)
 	}
 	if err := assets.WriteTinygoWasmExec(projectRoot); err != nil {
 		return fmt.Errorf("write wasm_exec.js: %w", err)
 	}
-	if err := assets.WriteScrollWorker(projectRoot); err != nil {
+	scroll, err := assets.WriteScrollWorker(projectRoot)
+	if err != nil {
 		return fmt.Errorf("write scroll_worker.js: %w", err)
+	}
+	if scroll == assets.ManagedPreserved {
+		preserved = append(preserved, filepath.Join("web", "scroll_worker.js"))
+	}
+	for _, name := range preserved {
+		fmt.Fprintf(os.Stderr,
+			"  note: %s is customised; the current godash template is in %s%s\n",
+			name, name, assets.ManagedRefSuffix)
 	}
 	return nil
 }

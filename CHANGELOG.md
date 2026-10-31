@@ -1,3 +1,21 @@
+## 2.5.0
+
+* Web host files a project customises are no longer clobbered by `godash
+  prepare`. `web/index.html`, `web/_headers`, `web/flutter_bootstrap.js` and
+  `web/scroll_worker.js` are **managed files**: the first line records a
+  `godash:template sha256:<hash>` stamp, so an untouched file is upgraded with
+  the embedded template while an edited file is preserved and the current
+  template is written next to it as `<file>.godash` for a manual merge (copy it
+  over the file to adopt it and resume automatic upgrades). `godash prepare`
+  prints a note when that happens. `web/scroll_worker.js` used to be
+  overwritten on every prepare even though its own text invites apps to replace
+  it.
+* `web/worker.js` is no longer rewritten after a web build. The worker appends
+  its own `?v=` query to the `worker.wasm` fetch (`self.location.search`, which
+  comes from the `worker.js?v=...` URL the app loads), so the file stays
+  byte-identical between builds and can be gitignored — the project template's
+  `.gitignore` now ignores `web/worker.js` and `web/*.godash`.
+
 ## 2.4.10
 
 * `fetch.Put(ctx, url, contentType, body, headers)` uploads a binary body with

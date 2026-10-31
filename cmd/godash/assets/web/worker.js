@@ -120,7 +120,10 @@ if (!WebAssembly.instantiateStreaming) {
 
 (async () => {
     const go = new self.Go();
-    const asset = "worker.wasm";
+    // Reuse this worker's own ?v= cache-buster (main.dart loads worker.js with
+    // ?v=<build version>), so the wasm fetch follows the same version without
+    // the build rewriting this file.
+    const asset = "worker.wasm" + self.location.search;
     const { instance } = await WebAssembly.instantiateStreaming(fetch(asset), go.importObject).catch((e) => {
         console.error(e);
         reportFatal("instantiateStreaming", e && e.message);

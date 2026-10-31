@@ -245,6 +245,11 @@ output. `cmd/godash/wiring_gen_test.go` covers the wiring renderers.
   `C.int32_t`; cgo exports live in package `main` for `-buildmode=c-shared`.
 - Generated `main.go`/`entrypoint.go`: `entrypoint.go` is created only if missing
   and is user-owned; don't overwrite it.
+- Web host files (`index.html`, `_headers`, `flutter_bootstrap.js`,
+  `scroll_worker.js`) are managed (`assets.WriteManaged`): the first line is a
+  `godash:template sha256:<hash>` stamp over the content. Untouched files are
+  upgraded, customised ones are preserved with a `<file>.godash` reference.
+  `worker.js`, `wasm_exec.js` and the sqlite assets are plain build outputs.
 - Do not close Dart `ReceivePort`s from Go.
 
 ## Agent skills

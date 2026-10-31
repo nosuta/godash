@@ -273,26 +273,20 @@ func wasmExecTinyGoScript() string {
 func wasmFullScript() string {
 	return wasmExecScript() + "\n" + `go mod -C go download
 GOOS=js GOARCH=wasm go build -C go -tags debug -ldflags='-w -s' -o ../web/worker.wasm
-` + updateGoBuildVersionScript() + "\n" + updateGoBuildVersionWebScript()
+` + updateGoBuildVersionScript()
 }
 
 // wasmTinyGoScript builds the WASM worker using TinyGo.
 func wasmTinyGoScript() string {
 	return wasmExecTinyGoScript() + "\n" + `go mod -C go download
 GOOS=js GOARCH=wasm tinygo build -C go -no-debug -panic=trap -opt=2 -o ../web/worker.wasm
-` + updateGoBuildVersionScript() + "\n" + updateGoBuildVersionWebScript()
+` + updateGoBuildVersionScript()
 }
 
 // updateGoBuildVersionScript regenerates lib/version/version.dart using
 // the gen_go_build_version tool resolved from the project's Go module graph.
 func updateGoBuildVersionScript() string {
 	return `go run -C go github.com/nosuta/godash/v2/cmd/gen_go_build_version ../lib/version/version.dart`
-}
-
-// updateGoBuildVersionWebScript rewrites web/worker.js with a cache-busting
-// asset version.
-func updateGoBuildVersionWebScript() string {
-	return `perl -pi -e "s/const asset.*?$/$1const asset = \"worker.wasm?v=$(date +%s)\";/" web/worker.js`
 }
 
 // sqliteDownloadScript downloads the sqlite3 wasm distribution and copies the

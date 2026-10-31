@@ -4,9 +4,11 @@
 package assets
 
 import (
+	"bytes"
+	"crypto/sha256"
 	"embed"
-	"fmt"
-	"io"
+	"encoding/hex"
+	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -42,32 +44,232 @@ var licensesTpl []byte
 // when godash extracts it into a project.
 const AppTitlePlaceholder = "{{APP_TITLE}}"
 
+// StampStyle selects the comment syntax of a managed file's provenance line.
+type StampStyle int
+
+const (
+	// StampHTML is `<!-- godash:template sha256:... -->`.
+	StampHTML StampStyle = iota
+	// StampHash is `# godash:template sha256:...`.
+	StampHash
+	// StampSlash is `// godash:template sha256:...`.
+	StampSlash
+)
+
+// stampMarker prefixes the provenance line of a managed file.
+const stampMarker = "godash:template sha256:"
+
+// ManagedRefSuffix names the file that carries the current godash template
+// next to a customised one, for a manual merge.
+const ManagedRefSuffix = ".godash"
+
+// ManagedResult reports what WriteManaged did with a file.
+type ManagedResult int
+
+const (
+	// ManagedUnchanged means the file already matched; nothing was written.
+	ManagedUnchanged ManagedResult = iota
+	// ManagedCreated means the file did not exist and was written.
+	ManagedCreated
+	// ManagedUpgraded means the file was untouched by the project and was
+	// replaced with the current template (or adopted it after a copy).
+	ManagedUpgraded
+	// ManagedPreserved means the project customised the file: it was left
+	// alone and the current template was written to <file>.godash.
+	ManagedPreserved
+)
+
 // ExtractWeb writes the embedded web/* assets into <projectRoot>/web/.
+//
 // The index.html title/meta placeholders ({{APP_TITLE}}) are replaced with
-// appTitle. Any pre-existing files at the destination are overwritten —
-// these are godash-owned files; user customisation lives in the Flutter
-// app itself, not the host page.
-func ExtractWeb(projectRoot, appTitle string) error {
+// appTitle. worker.js is a pure build output and is always refreshed; the
+// other host files (index.html, _headers, flutter_bootstrap.js) are managed:
+// a project may customise them, and their provenance stamp decides whether an
+// upgrade may replace them (see WriteManaged).
+//
+// It returns the project-relative paths that were preserved because the
+// project customised them.
+func ExtractWeb(projectRoot, appTitle string) ([]string, error) {
 	dst := filepath.Join(projectRoot, "web")
 	if err := os.MkdirAll(dst, 0755); err != nil {
-		return err
+		return nil, err
 	}
 	entries, err := webFS.ReadDir("web")
 	if err != nil {
-		return err
+		return nil, err
 	}
+	var preserved []string
 	for _, e := range entries {
-		if err := extractFSFile(webFS, "web", e.Name(), filepath.Join(dst, e.Name()), appTitle); err != nil {
-			return err
+		render, err := renderWebAsset(e.Name(), appTitle)
+		if err != nil {
+			return preserved, err
+		}
+		target := filepath.Join(dst, e.Name())
+		if e.Name() == "worker.js" {
+			// A generated build output, never customised.
+			if err := writeIfChanged(target, render, 0644); err != nil {
+				return preserved, err
+			}
+			continue
+		}
+		result, err := WriteManaged(target, render, webAssetStyle(e.Name()))
+		if err != nil {
+			return preserved, err
+		}
+		if result == ManagedPreserved {
+			preserved = append(preserved, filepath.Join("web", e.Name()))
 		}
 	}
-	return nil
+	return preserved, nil
+}
+
+// renderWebAsset reads one embedded web file and substitutes the app title.
+func renderWebAsset(name, appTitle string) ([]byte, error) {
+	data, err := fs.ReadFile(webFS, filepath.Join("web", name))
+	if err != nil {
+		return nil, err
+	}
+	if appTitle != "" && bytes.Contains(data, []byte(AppTitlePlaceholder)) {
+		data = []byte(strings.ReplaceAll(string(data), AppTitlePlaceholder, appTitle))
+	}
+	return data, nil
+}
+
+// webAssetStyle selects the comment syntax of an embedded web asset.
+func webAssetStyle(name string) StampStyle {
+	switch name {
+	case "index.html":
+		return StampHTML
+	case "_headers":
+		return StampHash
+	default:
+		return StampSlash
+	}
+}
+
+// WriteManaged writes a godash-owned text asset that a project may customise.
+//
+// The first line records the sha256 of the template it was generated from, so
+// a later run can tell an untouched file (upgrade it) from a customised one
+// (leave it alone and offer the new template as <dst>.godash).
+func WriteManaged(dst string, render []byte, style StampStyle) (ManagedResult, error) {
+	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+		return ManagedUnchanged, err
+	}
+	hash := sha256Hex(render)
+	existing, err := os.ReadFile(dst)
+	if errors.Is(err, fs.ErrNotExist) {
+		return ManagedCreated, writeStamped(dst, render, style, hash)
+	}
+	if err != nil {
+		return ManagedUnchanged, err
+	}
+	body, base := splitStamp(existing, style)
+	untouched := base != "" && base == sha256Hex(body)
+	// A project can adopt a new template by copying the .godash reference
+	// over the file: identical content re-establishes the provenance stamp.
+	adopts := bytes.Equal(body, render)
+
+	switch {
+	case untouched && base == hash:
+		return ManagedUnchanged, nil
+	case untouched || adopts:
+		if err := writeStamped(dst, render, style, hash); err != nil {
+			return ManagedUpgraded, err
+		}
+		_ = os.Remove(dst + ManagedRefSuffix)
+		return ManagedUpgraded, nil
+	case base == hash:
+		// Customised, but the template has not moved since: nothing to do.
+		return ManagedUnchanged, nil
+	default:
+		if err := os.WriteFile(dst+ManagedRefSuffix, render, 0644); err != nil {
+			return ManagedPreserved, err
+		}
+		return ManagedPreserved, nil
+	}
+}
+
+// writeIfChanged writes data unless the file already has exactly that content.
+func writeIfChanged(path string, data []byte, mode os.FileMode) error {
+	if existing, err := os.ReadFile(path); err == nil && bytes.Equal(existing, data) {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, mode)
+}
+
+func writeStamped(dst string, render []byte, style StampStyle, hash string) error {
+	return os.WriteFile(dst, stampText(render, style, hash), 0644)
+}
+
+// stampText prefixes render with the provenance line for its style.
+func stampText(render []byte, style StampStyle, hash string) []byte {
+	var prefix, suffix string
+	switch style {
+	case StampHTML:
+		prefix, suffix = "<!-- ", " -->"
+	case StampHash:
+		prefix = "# "
+	default:
+		prefix = "// "
+	}
+	var out bytes.Buffer
+	out.WriteString(prefix)
+	out.WriteString(stampMarker)
+	out.WriteString(hash)
+	out.WriteString(suffix)
+	out.WriteByte('\n')
+	out.Write(render)
+	return out.Bytes()
+}
+
+// splitStamp returns the content without its provenance line and the recorded
+// hash ("" when the file carries no valid stamp).
+func splitStamp(data []byte, style StampStyle) ([]byte, string) {
+	var prefix, suffix string
+	switch style {
+	case StampHTML:
+		prefix, suffix = "<!-- ", " -->"
+	case StampHash:
+		prefix = "# "
+	default:
+		prefix = "// "
+	}
+	if !bytes.HasPrefix(data, []byte(prefix+stampMarker)) {
+		return data, ""
+	}
+	nl := bytes.IndexByte(data, '\n')
+	if nl < 0 {
+		return data, ""
+	}
+	line := strings.TrimSpace(string(data[len(prefix)+len(stampMarker) : nl]))
+	line = strings.TrimSpace(strings.TrimSuffix(line, suffix))
+	if !isSHA256Hex(line) {
+		return data, ""
+	}
+	return data[nl+1:], line
+}
+
+func sha256Hex(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
+
+func isSHA256Hex(s string) bool {
+	if len(s) != sha256.Size*2 {
+		return false
+	}
+	_, err := hex.DecodeString(s)
+	return err == nil
 }
 
 // WriteTinygoWasmExec writes the patched wasm_exec.js (for TinyGo builds)
 // to <projectRoot>/web/wasm_exec.js.
 func WriteTinygoWasmExec(projectRoot string) error {
-	return os.WriteFile(filepath.Join(projectRoot, "web", "wasm_exec.js"), tinygoWasmExecJS, 0644)
+	return writeIfChanged(filepath.Join(projectRoot, "web", "wasm_exec.js"), tinygoWasmExecJS, 0644)
 }
 
 // ExtractTemplate writes the embedded project template into dst, preserving
@@ -114,9 +316,14 @@ func ExtractTemplate(dst string) error {
 }
 
 // WriteScrollWorker writes the scroll_worker.js placeholder to
-// <projectRoot>/web/scroll_worker.js.
-func WriteScrollWorker(projectRoot string) error {
-	return os.WriteFile(filepath.Join(projectRoot, "web", "scroll_worker.js"), scrollWorkerJS, 0644)
+// <projectRoot>/web/scroll_worker.js. It is a managed file: the template says
+// an app may replace it, so a customised copy is preserved.
+func WriteScrollWorker(projectRoot string) (ManagedResult, error) {
+	return WriteManaged(
+		filepath.Join(projectRoot, "web", "scroll_worker.js"),
+		scrollWorkerJS,
+		StampSlash,
+	)
 }
 
 // WriteLicensesTempFile writes the embedded licenses_dart.tpl to a temp
@@ -139,19 +346,6 @@ func WriteLicensesTempFile() (string, error) {
 	return f.Name(), nil
 }
 
-// extractFSFile copies a single embedded file to dst, optionally
-// substituting appTitle for the {{APP_TITLE}} placeholder.
-func extractFSFile(fsys fs.FS, prefix, name, dst, appTitle string) error {
-	data, err := fs.ReadFile(fsys, filepath.Join(prefix, name))
-	if err != nil {
-		return err
-	}
-	if appTitle != "" && strings.Contains(string(data), AppTitlePlaceholder) {
-		data = []byte(strings.ReplaceAll(string(data), AppTitlePlaceholder, appTitle))
-	}
-	return os.WriteFile(dst, data, 0644)
-}
-
 // DumpWebToTemp extracts the web assets to a temp dir (used by tests
 // and the upgrade dry-run). Returns the temp dir path.
 func DumpWebToTemp() (string, error) {
@@ -159,14 +353,9 @@ func DumpWebToTemp() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err := ExtractWeb(dir, "godash test"); err != nil {
+	if _, err := ExtractWeb(dir, "godash test"); err != nil {
 		os.RemoveAll(dir)
 		return "", err
 	}
 	return dir, nil
 }
-
-// ensureUnusedImport keeps `fmt`/`io` available for future expansion without
-// breaking the embed build. Safe to remove once used.
-var _ = fmt.Sprintf
-var _ = io.Discard
