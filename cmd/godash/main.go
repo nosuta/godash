@@ -117,9 +117,15 @@ Idempotent: safe to re-run.`,
 	"android": {
 		summary: "Build an Android target",
 		body: `Usage:
-  godash android apk        # release APK
-  godash android appbundle  # release AAB
+  godash android apk [--split-per-abi] [--target-platform <abis>]
+  godash android appbundle [--target-platform <abis>]
   godash android            # alias of "godash android apk"
+
+--split-per-abi builds one APK per ABI. --target-platform takes a
+comma-separated list of android-arm64 and android-x64; splitting defaults to
+both. 32-bit android-arm is rejected because godash only builds arm64-v8a and
+x86_64 native libraries. Release builds also regenerate lib/version/version.dart
+from the current git tag.
 
 Requires the Android SDK and NDK (NDK_PATH is read from custom.mk).`,
 	},
