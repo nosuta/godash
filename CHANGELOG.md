@@ -1,3 +1,15 @@
+## 2.6.0
+
+* `godash android apk` accepts `--split-per-abi` and `--target-platform <abis>`
+  and forwards them to `flutter build apk`. Splitting defaults to
+  `android-arm64,android-x64`, the ABIs godash can build a Go shared library
+  for; `android-arm` is rejected with an explicit error, and only the requested
+  ABIs' libraries are compiled.
+* Android, iOS and macOS release builds regenerate `lib/version/version.dart`
+  from `git describe` before building, so the in-app version and the MCP
+  handshake report the tag being released. Previously only the web build ran
+  the generator, which left those releases reporting the previous tag.
+
 ## 2.5.0
 
 * Web host files a project customises are no longer clobbered by `godash
