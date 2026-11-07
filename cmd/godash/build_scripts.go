@@ -302,18 +302,69 @@ rm -rf /tmp/sqlite-wasm /tmp/sqlite-wasm.zip
 `
 }
 
+// sqliteOpfsDeletePatchScript applies godash's OPFS quota workaround to the
+// downloaded SQLite proxy. Chromium does not include writes through a
+// FileSystemSyncAccessHandle in its persisted File System/.usage file, but
+// removeEntry() subtracts the deleted file's size anyway. Repeatedly deleting
+// SQLite rollback journals can therefore drive the saved usage negative;
+// after a restart Chromium reads it back as roughly 2^32. Truncating each
+// file to zero before removeEntry() makes removeEntry() subtract nothing.
+// The marker makes the patch idempotent, while a missing upstream anchor is
+// a deliberate build failure so a future SQLite update is reviewed instead
+// of silently losing the workaround.
+func sqliteOpfsDeletePatchScript() string {
+	return `
+# Apply the OPFS delete workaround to the SQLite async proxy.
+if [ -f web/sqlite3-opfs-async-proxy.js ] && ! grep -q 'opfs-truncate-before-removeEntry' web/sqlite3-opfs-async-proxy.js; then
+  perl -0pi -e '
+    s/await fh\.dirHandle\.removeEntry\(fh\.filenamePart\)/await deleteEntry(fh.dirHandle, fh.filenamePart)/s;
+    s/await hDir\.removeEntry\(filenamePart, \{recursive\}\)/await deleteEntry(hDir, filenamePart, recursive)/s;
+    s/await hDir\.removeEntry\(filenamePart\);/await deleteEntry(hDir, filenamePart);/s;
+    my $helper = q~
+  // opfs-truncate-before-removeEntry
+  // Chromium 401692415: writes through a FileSystemSyncAccessHandle do not
+  // update the persisted File System/.usage file, but removeEntry() subtracts
+  // the deleted file size anyway. Truncate the file to zero first so the
+  // deletion subtracts nothing and the saved usage cannot underflow.
+  const deleteEntry = async (hDir, filenamePart, recursive = false) => {
+    let sah;
+    try {
+      const hFile = await hDir.getFileHandle(filenamePart);
+      sah = await hFile.createSyncAccessHandle();
+      sah.truncate(0);
+      await sah.flush();
+    } catch (e) {
+      // Directories and locked files cannot be truncated; removeEntry() below
+      // remains the delete operation and will report any real failure.
+    } finally {
+      try { sah?.close(); } catch (e) {}
+    }
+    return hDir.removeEntry(filenamePart, {recursive});
+  };
+~;
+    my $anchor = "  const closeSyncHandleNoThrow = async (fh)=>{\n    try{await closeSyncHandle(fh)}\n    catch(e){\n      warn(\"closeSyncHandleNoThrow() ignoring:\",e,fh);\n    }\n  };";
+    my $pos = index($_, $anchor);
+    die "sqlite OPFS proxy patch anchor not found\n" if $pos < 0;
+    substr($_, $pos + length($anchor), 0) = $helper;
+  ' web/sqlite3-opfs-async-proxy.js
+fi
+`
+}
+
 // ensureSqliteWebAssetsScript downloads the sqlite3 wasm distribution into web/
 // when it is missing. The web worker importScripts()es sqlite3.js at startup and
 // go-wasmsqlite loads the adjacent sqlite3.wasm, so both must be served next to
 // worker.wasm. Projects that never open a database still get them; the download
-// is skipped once present.
+// is skipped once present. The OPFS delete patch is applied on every web
+// build/run so an already-downloaded asset is repaired without forcing a
+// clean.
 func ensureSqliteWebAssetsScript() string {
 	return `
 # Ensure sqlite3.js exists; download if missing
 if [ ! -f web/sqlite3.js ]; then
 ` + sqliteDownloadScript() + `
 fi
-`
+` + sqliteOpfsDeletePatchScript()
 }
 
 // prepareWasmTestScript materialises the go_js_wasm_exec harness into

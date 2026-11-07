@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"strings"
 	"testing"
 )
@@ -112,6 +113,64 @@ func TestWebScriptsProvideSqliteAssets(t *testing.T) {
 		if !strings.Contains(s, "proto/*.proto") {
 			t.Errorf("%s must glob all proto files, not just echo.proto:\n%s", name, s)
 		}
+	}
+}
+
+// TestSqliteOpfsDeletePatchString guards the Chromium OPFS quota workaround:
+// the patch must replace every SQLite proxy removeEntry() call, insert the
+// truncate-then-delete helper once, and be idempotent.
+func TestSqliteOpfsDeletePatch(t *testing.T) {
+	proxy := `  const closeSyncHandleNoThrow = async (fh)=>{
+    try{await closeSyncHandle(fh)}
+    catch(e){
+      warn("closeSyncHandleNoThrow() ignoring:",e,fh);
+    }
+  };
+  try{ await fh.dirHandle.removeEntry(fh.filenamePart) }
+  await hDir.removeEntry(filenamePart, {recursive});
+  await hDir.removeEntry(filenamePart);
+`
+	dir := t.TempDir()
+	if err := os.MkdirAll(dir+"/web", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := dir + "/web/sqlite3-opfs-async-proxy.js"
+	if err := os.WriteFile(path, []byte(proxy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	for range 2 {
+		cmd := exec.Command("/bin/sh", "-c", sqliteOpfsDeletePatchScript())
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("sqlite OPFS delete patch failed: %v\n%s", err, out)
+		}
+	}
+
+	gotBytes, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(gotBytes)
+	for _, want := range []string{
+		"// opfs-truncate-before-removeEntry",
+		"sah.truncate(0);",
+		"await deleteEntry(fh.dirHandle, fh.filenamePart)",
+		"await deleteEntry(hDir, filenamePart, recursive)",
+		"await deleteEntry(hDir, filenamePart);",
+		"return hDir.removeEntry(filenamePart, {recursive});",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("patched proxy missing %q:\n%s", want, got)
+		}
+	}
+	if n := strings.Count(got, "opfs-truncate-before-removeEntry"); n != 1 {
+		t.Errorf("patch marker appears %d times, want 1", n)
+	}
+	if strings.Contains(got, "await fh.dirHandle.removeEntry") ||
+		strings.Contains(got, "await hDir.removeEntry(filenamePart, {recursive})") ||
+		strings.Contains(got, "await hDir.removeEntry(filenamePart);") {
+		t.Errorf("patch left a direct removeEntry call:\n%s", got)
 	}
 }
 

@@ -1,3 +1,13 @@
+## 2.7.0
+
+* `godash web build` / `godash web run` patch the downloaded SQLite
+  `sqlite3-opfs-async-proxy.js` to truncate each OPFS file to zero before
+  `removeEntry()`. This works around Chromium issue 401692415, where writes
+  through `FileSystemSyncAccessHandle` do not update the persisted File
+  System `.usage` file but `removeEntry()` still subtracts the file size.
+  Repeated SQLite journal deletes could otherwise drive the saved usage
+  negative and make DevTools report roughly 2^32 bytes after restart.
+
 ## 2.6.0
 
 * `godash android apk` accepts `--split-per-abi` and `--target-platform <abis>`

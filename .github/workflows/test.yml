@@ -47,6 +47,44 @@ jobs:
           jswasm=/tmp/sqlite-wasm/sqlite-wasm-3530300/jswasm
           cp "$jswasm/sqlite3.js" "$jswasm/sqlite3.wasm" "$jswasm/sqlite3-opfs-async-proxy.js" cmd/go_js_wasm_exec/
           cp cmd/godash/assets/scroll_worker.js cmd/go_js_wasm_exec/
+          # Keep this patch in sync with sqliteOpfsDeletePatchScript() in
+          # cmd/godash/build_scripts.go. Chromium 401692415: sync-handle
+          # writes do not update the persisted .usage file, but
+          # removeEntry() subtracts the file size anyway. Truncate to zero
+          # before deleting so the saved usage cannot underflow to ~2^32.
+          if ! grep -q 'opfs-truncate-before-removeEntry' cmd/go_js_wasm_exec/sqlite3-opfs-async-proxy.js; then
+            perl -0pi -e '
+              s/await fh\.dirHandle\.removeEntry\(fh\.filenamePart\)/await deleteEntry(fh.dirHandle, fh.filenamePart)/s;
+              s/await hDir\.removeEntry\(filenamePart, \{recursive\}\)/await deleteEntry(hDir, filenamePart, recursive)/s;
+              s/await hDir\.removeEntry\(filenamePart\);/await deleteEntry(hDir, filenamePart);/s;
+              my $helper = q~
+            // opfs-truncate-before-removeEntry
+            // Chromium 401692415: writes through a FileSystemSyncAccessHandle do not
+            // update the persisted File System/.usage file, but removeEntry() subtracts
+            // the deleted file size anyway. Truncate the file to zero first so the
+            // deletion subtracts nothing and the saved usage cannot underflow.
+            const deleteEntry = async (hDir, filenamePart, recursive = false) => {
+              let sah;
+              try {
+                const hFile = await hDir.getFileHandle(filenamePart);
+                sah = await hFile.createSyncAccessHandle();
+                sah.truncate(0);
+                await sah.flush();
+              } catch (e) {
+                // Directories and locked files cannot be truncated; removeEntry() below
+                // remains the delete operation and will report any real failure.
+              } finally {
+                try { sah?.close(); } catch (e) {}
+              }
+              return hDir.removeEntry(filenamePart, {recursive});
+            };
+          ~;
+              my $anchor = "  const closeSyncHandleNoThrow = async (fh)=>{\n    try{await closeSyncHandle(fh)}\n    catch(e){\n      warn(\"closeSyncHandleNoThrow() ignoring:\",e,fh);\n    }\n  };";
+              my $pos = index($_, $anchor);
+              die "sqlite OPFS proxy patch anchor not found\n" if $pos < 0;
+              substr($_, $pos + length($anchor), 0) = $helper;
+            ' cmd/go_js_wasm_exec/sqlite3-opfs-async-proxy.js
+          fi
       - name: Install wasmbrowsertest harness
         run: |
           cd cmd/go_js_wasm_exec
