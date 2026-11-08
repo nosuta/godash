@@ -110,9 +110,14 @@ Idempotent: safe to re-run.`,
 	"web": {
 		summary: "Build or run the Web target",
 		body: `Usage:
-  godash web build   # flutter build web --wasm --release
-  godash web run     # flutter run -d web-server (dev, full Go wasm)
-  godash web         # alias of "godash web build"`,
+  godash web build [flutter flags...]
+  godash web run   [flutter flags...]
+  godash web       # alias of "godash web build"
+
+Every argument after the mode is forwarded to Flutter, for example:
+  godash web run --web-port 9999 --web-hostname 0.0.0.0
+A literal -- also separates godash flags from Flutter flags. The web target
+always uses -d web-server, so -d/--device-id is rejected.`,
 	},
 	"android": {
 		summary: "Build an Android target",

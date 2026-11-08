@@ -95,6 +95,7 @@ godash prepare              # regenerate proto + wiring, flutter create, license
 godash proto                # regenerate Go + Dart protobuf code only
 godash macos run            # build the Go lib, then flutter run -d macos
 godash web build            # flutter build web --wasm --release
+godash web run --web-port 9999  # dev server on a fixed port (any Flutter flag)
 godash android apk          # build .so + APK
 godash ios                  # build .a/xcframework + iOS app
 godash lib macos            # build only the native library
@@ -312,10 +313,9 @@ bridge logs a warning and keeps the envelope.
 > ignored. Static hosts must send the two headers; the scaffold's `web/_headers`
 > already does for hosts that honor it (Netlify/Cloudflare Pages).
 >
-> Dev-mode gotcha: `godash web run` uses `flutter run -d web-server`, which does
-> **not** send COOP/COEP, so shared memory is silently inactive while developing.
-> Exercise it with `godash web build` served by an isolating host, or put the dev
-> server behind a proxy that adds the two headers.
+> Dev-mode: `godash web run` passes both headers with `--web-header`, so the
+> dev server is cross-origin isolated too. Keep them if you put the dev server
+> behind a proxy.
 
 ### Memory ownership (native)
 

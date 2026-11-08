@@ -1,3 +1,11 @@
+## 2.8.0
+
+* `godash web build` / `godash web run` forward every argument after the mode
+  to Flutter (shell-quoted), so flags such as `--web-port`, `--web-hostname`,
+  `--target` and `--dart-define` pass through. A literal `--` separates godash
+  flags from Flutter flags. `godash web run` rejects `-d`/`--device-id` because
+  the web flow always uses `-d web-server`.
+
 ## 2.7.0
 
 * `godash web build` / `godash web run` patch the downloaded SQLite

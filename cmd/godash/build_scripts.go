@@ -152,30 +152,32 @@ flutter create -e --platforms=web .
 const webDevCrossOriginHeaders = `--web-header "Cross-Origin-Opener-Policy=same-origin" --web-header "Cross-Origin-Embedder-Policy=require-corp"`
 
 // webRunCommand is the flutter dev-server invocation used by `godash web run`.
-func webRunCommand() string {
-	return `flutter run -d web-server ` + webDevCrossOriginHeaders
+// forwarded is the pre-quoted Flutter argument string from the CLI (empty for
+// none). Godash's own flags come last so a conflicting user flag cannot win.
+func webRunCommand(forwarded string) string {
+	return `flutter run` + forwarded + ` -d web-server ` + webDevCrossOriginHeaders
 }
 
 // webBuildShell is the target-specific shell for `godash web build` (run after
 // protobuf generation + wiring): ensure the sqlite web assets, build the TinyGo
-// worker, generate licenses, then build the Flutter bundle. dartDefines is the
-// pre-quoted ` --dart-define=...` suffix forwarded from the CLI (empty for
-// none), so build-time constants reach `flutter build web`.
-func webBuildShell(dartDefines string) string {
+// worker, generate licenses, then build the Flutter bundle. forwarded is the
+// pre-quoted Flutter argument string from the CLI (empty for none); godash's
+// required build flags come last so they win over a conflicting user flag.
+func webBuildShell(forwarded string) string {
 	return ensureSqliteWebAssetsScript() + "\n" +
 		wasmTinyGoScript() + "\n" +
 		applyGoLicensesScript() + "\n" +
-		`flutter build web --wasm --release` + dartDefines
+		`flutter build web` + forwarded + ` --wasm --release`
 }
 
 // webRunShell is the target-specific shell for `godash web run` (run after
 // protobuf generation + wiring): ensure the sqlite web assets, build the Go
 // worker, then start the dev server with the cross-origin isolation headers.
-// dartDefines is forwarded to `flutter run` as for webBuildShell.
-func webRunShell(dartDefines string) string {
+// forwarded is passed to `flutter run` as for webBuildShell.
+func webRunShell(forwarded string) string {
 	return ensureSqliteWebAssetsScript() + "\n" +
 		wasmFullScript() + "\n" +
-		webRunCommand() + dartDefines
+		webRunCommand(forwarded)
 }
 
 // buildScriptWebBuild returns the shell for `godash web build`.

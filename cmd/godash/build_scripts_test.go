@@ -227,23 +227,65 @@ func TestAndroidScriptsCopySharedLibrary(t *testing.T) {
 	}
 }
 
-// TestWebScriptsForwardDartDefines guards that `godash web build`/`run` forward
-// --dart-define flags to flutter, so a project can enable a build-time constant
-// such as --dart-define=CONCORD_SAB_RING=true.
-func TestWebScriptsForwardDartDefines(t *testing.T) {
-	if got := dartDefineArgs([]string{"build", "--dart-define=A=1", "--other"}); got != " '--dart-define=A=1'" {
-		t.Fatalf("dartDefineArgs = %q, want the single quoted define", got)
+// TestWebScriptsForwardFlutterArgs guards that `godash web build`/`run` forward
+// every Flutter argument, so flags such as --web-port, --web-hostname and
+// --dart-define reach the underlying command.
+func TestWebScriptsForwardFlutterArgs(t *testing.T) {
+	args := []string{"--web-port", "9999", "--web-hostname=0.0.0.0", "--dart-define=A=1"}
+	forwarded := forwardArgs(args)
+	want := " '--web-port' '9999' '--web-hostname=0.0.0.0' '--dart-define=A=1'"
+	if forwarded != want {
+		t.Fatalf("forwardArgs = %q, want %q", forwarded, want)
 	}
-	if got := dartDefineArgs(nil); got != "" {
-		t.Fatalf("dartDefineArgs(nil) = %q, want empty", got)
+	if got := forwardArgs(nil); got != "" {
+		t.Fatalf("forwardArgs(nil) = %q, want empty", got)
 	}
-	defines := dartDefineArgs([]string{"--dart-define=CONCORD_SAB_RING=true"})
+	if got := forwardArgs([]string{"--dart-define=A=it's"}); got != ` '--dart-define=A=it'\''s'` {
+		t.Fatalf("forwardArgs quote = %q", got)
+	}
+
 	for name, s := range map[string]string{
-		"web-build": webBuildShell(defines),
-		"web-run":   webRunShell(defines),
+		"web-build": webBuildShell(forwarded),
+		"web-run":   webRunShell(forwarded),
 	} {
-		if !strings.Contains(s, "--dart-define=CONCORD_SAB_RING=true") {
-			t.Errorf("%s must forward the dart-define:\n%s", name, s)
+		for _, flag := range args {
+			if !strings.Contains(s, flag) {
+				t.Errorf("%s must forward %q:\n%s", name, flag, s)
+			}
+		}
+	}
+	if s := webRunShell(forwarded); !strings.Contains(s, "-d web-server") {
+		t.Errorf("web run must keep -d web-server:\n%s", s)
+	}
+	if s := webBuildShell(forwarded); !strings.Contains(s, "--wasm --release") {
+		t.Errorf("web build must keep --wasm --release:\n%s", s)
+	}
+}
+
+func TestSplitPassthrough(t *testing.T) {
+	got := splitPassthrough([]string{"--web-port", "9999", "--", "--web-hostname", "0.0.0.0"})
+	if len(got) != 2 || got[0] != "--web-hostname" || got[1] != "0.0.0.0" {
+		t.Fatalf("splitPassthrough = %q", got)
+	}
+	if got := splitPassthrough([]string{"--web-port", "9999"}); len(got) != 2 {
+		t.Fatalf("splitPassthrough without -- = %q", got)
+	}
+}
+
+func TestRejectDeviceArgs(t *testing.T) {
+	for _, args := range [][]string{
+		{"-d", "chrome"},
+		{"--device-id", "web-server"},
+		{"--device-id=chrome"},
+		{"-d=chrome"},
+	} {
+		if err := rejectDeviceArgs(args); err == nil {
+			t.Errorf("rejectDeviceArgs(%q) = nil, want an error", args)
+		}
+	}
+	for _, args := range [][]string{nil, {"--web-port", "9999"}, {"--dart-define=-d"}} {
+		if err := rejectDeviceArgs(args); err != nil {
+			t.Errorf("rejectDeviceArgs(%q) = %v, want nil", args, err)
 		}
 	}
 }
