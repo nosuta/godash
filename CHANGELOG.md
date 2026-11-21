@@ -1,5 +1,19 @@
 ## 2.8.0
 
+* Bumped `github.com/nosuta/go-wasmsqlite` to v0.5.0. SQLite failures (missing
+  table, constraint violation, failed `ROLLBACK`) are now returned as Go errors
+  instead of being caught with `recover()`. The old path only worked on the
+  standard Go toolchain: the TinyGo release worker builds with `-panic=trap`, so
+  a single failed statement trapped the whole wasm module and every in-flight
+  RPC hung. The driver now catches the JavaScript exception with a small
+  `Function`-based helper; godash's web output sends no CSP, but a custom
+  `web/_headers` must allow `'unsafe-eval'` (or omit `script-src`) for it to work.
+  Added regression coverage: `sqlite/webtest/sqlite_js_test.go` checks in the
+  browser harness that failed statements return errors and leave the connection
+  usable, and `sqlite/sqlite_dep_test.go` guards against downgrading below
+  v0.5.0. CI's web job now runs `./sqlite` and `./sqlite/webtest` alongside
+  `./web` (`sqlite3InitModule` allows only one `sql.Open` per worker, hence the
+  separate package).
 * `godash web build` / `godash web run` forward every argument after the mode
   to Flutter (shell-quoted), so flags such as `--web-port`, `--web-hostname`,
   `--target` and `--dart-define` pass through. A literal `--` separates godash

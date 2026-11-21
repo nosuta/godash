@@ -92,7 +92,10 @@ jobs:
       - name: Web worker protocol tests
         # Ubuntu CI images disable unprivileged user namespaces, so Chrome's
         # sandbox cannot initialize; the harness opts into --no-sandbox.
-        run: GOOS=js GOARCH=wasm go test -exec /tmp/go_js_wasm_exec ./web
+        # ./sqlite exercises the OPFS driver's error contract in the browser.
+        # It is a separate test binary (worker) because sqlite3InitModule may
+        # only run once per worker.
+        run: GOOS=js GOARCH=wasm go test -exec /tmp/go_js_wasm_exec ./web ./sqlite ./sqlite/webtest
         env:
           WASM_NO_SANDBOX: "on"
 

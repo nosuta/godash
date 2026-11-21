@@ -225,6 +225,14 @@ output. `cmd/godash/wiring_gen_test.go` covers the wiring renderers.
 
 ## Gotchas (hard-won)
 
+- The web SQLite driver calls `sqlite3InitModule()` once per `sql.Open`, but
+  SQLite WASM consumes a global init state, so a **second `Open` in the same
+  worker fails** with `globalThis.sqlite3InitModuleState is missing`. A real app
+  opens the DB once in `EntryPoint`; tests that need two `Open`s must live in
+  separate packages so the browser harness gives each its own worker (see
+  `sqlite/webtest/`). Failed SQL must be returned as an error: go-wasmsqlite
+  v0.5.0 catches the JS exception with a `Function`-based helper because
+  `recover()` does not run under TinyGo `-panic=trap`.
 - The embedded project scaffold lives in `cmd/godash/assets/_template/`. Its
   `go` tree is stored as `_go/` with `go.mod.tmpl` because `go:embed` drops any
   directory containing a nested `go.mod`, and `_`-prefixed dirs are ignored by

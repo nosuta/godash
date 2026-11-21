@@ -28,7 +28,7 @@ flutter test
 
 # Web worker protocol tests (browser harness)
 (cd cmd/go_js_wasm_exec && go build -o /tmp/go_js_wasm_exec .)
-GOOS=js GOARCH=wasm go test -exec /tmp/go_js_wasm_exec ./web
+GOOS=js GOARCH=wasm go test -exec /tmp/go_js_wasm_exec ./web ./sqlite ./sqlite/webtest
 
 # Native integration/benchmark backend
 go build -buildmode=c-shared -o benchmark/native/libbench.dylib ./benchmark/native
@@ -49,6 +49,8 @@ Hygiene: `go test ./...` rewrites `sqlite/testdb`; restore with
 | Hot layout | `internal/hotlayout/hotlayout_test.go` | alignment, ordering, empty, floats, rejection of string/bytes/repeated | good |
 | Wiring renderers | `cmd/godash/wiring_gen_test.go` | `HotInvoke`, main.go hot exports, zero-copy request, scan `*.hot.go` | partial |
 | SQLite (native) | `sqlite/sqlite_test.go` | open + basic query | partial |
+| SQLite driver pin | `sqlite/sqlite_dep_test.go` | `go-wasmsqlite >= v0.5.0` (no `recover()`-based error handling that traps the TinyGo `-panic=trap` worker) | good |
+| SQLite (web error contract) | `sqlite/webtest/sqlite_js_test.go` | failed statement returns an error (missing table, UNIQUE, stray ROLLBACK) and the connection survives; browser harness | good (needs harness) |
 | Web worker protocol | `web/web_js_test.go` | onMessage Init/RPC/stream+Done/bad-proto/non-MessageEvent, webPusher | good (needs harness) |
 | Web shared ring (Go) | `web/web_sab_test.go` | in-order drain, full-ring fallback, oversized-frame fallback | good (needs harness) |
 | Dart shared ring | `test/bridge/shared_ring_test.dart` | pure reader: order, wrap-around, empty, sequential drains | good |

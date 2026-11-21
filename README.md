@@ -335,7 +335,11 @@ The response export path is zero-copy: Dart parses directly from the
 
 `sqlite.Open(path)` returns a `*database/sql.DB`. On native it uses
 `modernc.org/sqlite`; on web (`sqlite_js.go`) it uses
-`go-wasmsqlite` + OPFS. The abstraction is identical across targets.
+`go-wasmsqlite` + OPFS. The abstraction is identical across targets. Failed
+statements are returned as errors on both targets; the web driver catches the
+SQLite exception in JavaScript so it also works in the TinyGo `-panic=trap`
+release worker. If you add a Content-Security-Policy to a custom `web/_headers`,
+it must allow `'unsafe-eval'` (or omit `script-src`) for that helper.
 
 ### FFI bindings are dynamic
 
