@@ -1,4 +1,4 @@
-## 2.8.0
+## 2.8.1
 
 * Bumped `github.com/nosuta/go-wasmsqlite` to v0.5.0. SQLite failures (missing
   table, constraint violation, failed `ROLLBACK`) are now returned as Go errors
@@ -14,6 +14,9 @@
   v0.5.0. CI's web job now runs `./sqlite` and `./sqlite/webtest` alongside
   `./web` (`sqlite3InitModule` allows only one `sql.Open` per worker, hence the
   separate package).
+
+## 2.8.0
+
 * `godash web build` / `godash web run` forward every argument after the mode
   to Flutter (shell-quoted), so flags such as `--web-port`, `--web-hostname`,
   `--target` and `--dart-define` pass through. A literal `--` separates godash
