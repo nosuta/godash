@@ -1,9 +1,11 @@
 // Guard against downgrading the web SQLite driver. v0.5.0 is the first
 // go-wasmsqlite release that reports failed statements as Go errors without
-// recover(); older releases trap the TinyGo -panic=trap release worker on the
-// first missing table / constraint violation / stray ROLLBACK. The behavioural
-// contract is covered by sqlite_js_test.go in the browser harness; this test
-// makes the version that provides it part of `go test ./...`.
+// recover(); older releases trap the TinyGo -panic:trap release worker on the
+// first missing table / constraint violation / stray ROLLBACK. v0.5.1 made the
+// SQLite JS module shared per Worker, so reopening the database -- a retry
+// after a failed open -- no longer dies inside the module loader. The
+// behavioural contract is covered by the browser harness (sqlite/webtest);
+// this test makes the versions that provide it part of `go test ./...`.
 
 //go:build !js
 
@@ -27,7 +29,7 @@ func TestGoWasmSQLiteDriverVersion(t *testing.T) {
 	if !ok {
 		t.Fatalf("unexpected go-wasmsqlite version %q", version)
 	}
-	want := [...]int{0, 5, 0}
+	want := [...]int{0, 5, 1}
 	if compareSemver(got, want) < 0 {
 		t.Fatalf("go-wasmsqlite %q is too old: need >= v0.5.0 so failed SQL "+
 			"statements do not trap the TinyGo -panic=trap worker", version)
